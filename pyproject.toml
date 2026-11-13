@@ -1,0 +1,53 @@
+[project]
+name = "bench-suite"
+dynamic = ["version"]
+description = "One install for the repair bench: benchhud, benchhud-intake, bench-parts and bench-recon, set up and wired to each other."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "PolyForm-Small-Business-1.0.0"
+license-files = ["LICENSE", "NOTICES"]
+authors = [{ name = "Aaron Cupp" }]
+keywords = ["bench", "installer", "self-hosted", "apt"]
+
+# Source-available, not open source, and distributed from GitHub and
+# apt.yolorepair.com only. The classifier makes PyPI refuse an upload outright.
+classifiers = ["Private :: Do Not Upload"]
+
+# None, on purpose: bench-setup runs on a fresh host on the system python3.
+dependencies = []
+
+[project.scripts]
+bench-setup = "bench_setup.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/IamMrCupp/bench-suite"
+Issues = "https://github.com/IamMrCupp/bench-suite/issues"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8",
+    "pytest>=8.3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/bench_setup/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bench_setup"]
+
+# Same lint config as the other bench repos.
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
