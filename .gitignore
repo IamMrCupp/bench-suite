@@ -1,0 +1,28 @@
+.venv/
+__pycache__/
+*.pyc
+*.log
+.env
+
+dist/
+build/
+*.egg-info/
+
+# claude-project-kit — managed block START
+# Local-only Claude Code state — installed globally via install-commands.sh
+# or scoped per-project, but never committed to the source-code repo.
+.claude/
+# claude-project-kit — managed block END
+
+# macOS
+.DS_Store
+._*
+.AppleDouble
+.LSOverride
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

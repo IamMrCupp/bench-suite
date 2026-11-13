@@ -1,0 +1,8 @@
+bench-suite — third-party notices
+
+bench-suite itself is licensed under the PolyForm Small Business License 1.0.0
+(see LICENSE). bench-setup uses the Python standard library only and ships no
+third-party code.
+
+The apps it installs — benchhud, benchhud-intake, bench-parts and bench-recon —
+are separate packages, each with its own LICENSE and NOTICES.
