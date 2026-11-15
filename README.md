@@ -2,7 +2,7 @@
 
 One install for the repair bench. **bench-suite** sets up the four bench apps on one machine and wires them to each other, so a fresh box goes from nothing to a working bench without hand-copying URLs and tokens between configs.
 
-> **Status: under construction.** Nothing here installs anything yet. The pieces land one change at a time; the plan is below.
+> **Status: under construction.** `bench-setup services` exists and is tested against a fake machine; the packages and the apt repo that deliver it don't yet. The pieces land one change at a time.
 
 ## What it puts together
 
@@ -30,7 +30,15 @@ sudo bench-setup
 - asks whether to turn bench-recon on,
 - and checks every service answers before it calls the job done.
 
-Run it again any time — it only changes what's missing. `--non-interactive` does the same from a script. Upgrades are plain `apt upgrade`.
+Run it again any time — it only changes what's missing. A service that already has a token keeps it, so a re-run never cuts off whatever else is using it. Upgrades are plain `apt upgrade`.
+
+From a script, nothing prompts and the password comes in on stdin — never on the command line, where `ps` would show it:
+
+```sh
+printf '%s\n' "$BENCH_PASSWORD" | sudo bench-setup services --non-interactive
+```
+
+bench-recon stays off there too unless you pass `--recon`. Quit benchhud before running it: benchhud saves its config on the way out and would write its old copy over the new one, so `bench-setup` refuses to wire it while it's open.
 
 macOS gets the same thing through a Homebrew tap. Windows comes later.
 

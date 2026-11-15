@@ -29,9 +29,9 @@ def test_help_names_the_services(capsys) -> None:
         assert name in out
 
 
-def test_no_arguments_does_nothing_and_says_so(capsys) -> None:
+def test_no_arguments_points_at_the_services_command(capsys) -> None:
     assert main([]) == 0
-    assert "nothing to do yet" in capsys.readouterr().out
+    assert "sudo bench-setup services" in capsys.readouterr().out
 
 
 def test_runs_as_a_module_on_the_standard_library_alone() -> None:
@@ -40,6 +40,7 @@ def test_runs_as_a_module_on_the_standard_library_alone() -> None:
     # and our own source are importable, the way a bare host's python3 sees it.
     code = (
         "import sys; sys.path.insert(0, sys.argv[1]); sys.argv = ['bench-setup', '--version']\n"
+        "import bench_setup.services, bench_setup.host\n"
         "try:\n    import bench_setup.__main__\nexcept SystemExit as e:\n    assert e.code == 0\n"
         "third = {m.split('.')[0] for m in sys.modules} - set(sys.stdlib_module_names)\n"
         "third -= {'bench_setup', '__main__'}\n"
