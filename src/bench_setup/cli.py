@@ -7,6 +7,7 @@ else is installed, and ships in a ``.deb`` that depends on the system
     sudo bench-setup services                    # set up the services, wire benchhud
     sudo bench-setup services --recon            # ...and turn bench-recon on
     printf '%s\\n' "$PW" | sudo bench-setup services --non-interactive
+    bench-setup services --compose               # the same, for the containers
 
 The other subcommands (host, cameras, doctor) land in their own changes.
 """
@@ -14,7 +15,9 @@ The other subcommands (host, cameras, doctor) land in their own changes.
 from __future__ import annotations
 
 import argparse
+import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 from bench_setup import __version__
 
@@ -60,6 +63,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="leave bench-recon off without asking",
     )
     services.add_argument(
+        "--compose",
+        nargs="?",
+        const="",
+        metavar="FILE",
+        help=(
+            "set up the containers from a compose file instead of the installed packages; "
+            "FILE defaults to ./compose.yaml, then the one bench-suite installs. Needs no sudo"
+        ),
+    )
+    services.add_argument(
         "--user",
         help="whose benchhud to wire (default: the account that ran sudo)",
     )
@@ -71,8 +84,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "services":
         from bench_setup import services
 
+        compose: Path | None = None
+        if args.compose is not None:
+            compose = Path(args.compose).resolve() if args.compose else services.find_compose_file()
+            if compose is None:
+                looked = " or ".join(str(p) for p in services.COMPOSE_FILES)
+                print(f"bench-setup: no compose file at {looked}. Name one.", file=sys.stderr)
+                return services.EXIT_USAGE
         return services.run(
-            services.Options(interactive=not args.non_interactive, recon=args.recon, user=args.user)
+            services.Options(
+                interactive=not args.non_interactive,
+                recon=args.recon,
+                user=args.user,
+                compose=compose,
+            )
         )
     # The full guided run isn't here yet: say so plainly instead of pretending.
     print("bench-setup: nothing to do yet. Try: sudo bench-setup services")

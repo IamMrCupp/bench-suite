@@ -2,7 +2,7 @@
 
 One install for the repair bench. **bench-suite** sets up the four bench apps on one machine and wires them to each other, so a fresh box goes from nothing to a working bench without hand-copying URLs and tokens between configs.
 
-> **Status: under construction.** `bench-setup services` exists and is tested against a fake machine; the packages and the apt repo that deliver it don't yet. The pieces land one change at a time.
+> **Status: under construction.** `bench-setup services` exists, and its container route runs against the real service images in CI; the packages and the apt repo that deliver it don't yet. The pieces land one change at a time.
 
 ## What it puts together
 
@@ -39,6 +39,17 @@ printf '%s\n' "$BENCH_PASSWORD" | sudo bench-setup services --non-interactive
 ```
 
 bench-recon stays off there too unless you pass `--recon`. Quit benchhud before running it: benchhud saves its config on the way out and would write its old copy over the new one, so `bench-setup` refuses to wire it while it's open.
+
+### In containers instead
+
+If you'd rather not install the service packages, the three services run from the [`compose.yaml`](compose.yaml) in this repo, and `bench-setup` does the same job through `docker compose`:
+
+```sh
+bench-setup services --compose            # ./compose.yaml, or name one
+bench-setup services --compose --recon    # ...and turn bench-recon on
+```
+
+No `sudo` — it only needs to be able to run Docker. Every port is published on `127.0.0.1` only. bench-recon sits behind a compose profile, so a plain `docker compose up -d` never starts it, and `bench-setup` won't set it up if you've edited the file to publish it beyond this machine. The password and tokens live in each service's volume, not in the compose file or a `.env`.
 
 macOS gets the same thing through a Homebrew tap. Windows comes later.
 

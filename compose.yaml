@@ -1,0 +1,55 @@
+# The bench services in containers: the route for people who'd rather not
+# install the service .debs.
+#
+#   docker compose up -d                 # intake and parts; not ready yet
+#   bench-setup services --compose       # password, tokens, start, wire benchhud
+#
+# bench-setup does the whole job by itself, so the first line is optional.
+# Without it the services refuse to start: they have no password yet. By hand:
+#
+#   docker compose run --rm intake benchhud-intake set-password
+#   docker compose run --rm parts bench-parts set-password
+#
+# Passwords and tokens live in settings.env inside each volume, read by the
+# app itself. Nothing secret goes in this file or in a .env next to it.
+#
+# Every port is published on 127.0.0.1 only: this machine and nothing else.
+
+name: bench-suite
+
+services:
+  intake:
+    image: ghcr.io/iammrcupp/benchhud-intake:0.3
+    ports:
+      # For a tablet on the LAN, "8401:8000". Never a public network: it holds
+      # customer records.
+      - "127.0.0.1:8401:8000"
+    volumes:
+      - intake-data:/data
+    restart: unless-stopped
+
+  parts:
+    image: ghcr.io/iammrcupp/bench-parts:0.4
+    ports:
+      - "127.0.0.1:8402:8000"
+    volumes:
+      - parts-data:/data
+    restart: unless-stopped
+
+  recon:
+    image: ghcr.io/iammrcupp/bench-recon:0.3
+    # Off unless you ask for it: it holds client engagement data. A plain
+    # `docker compose up -d` skips it. `bench-setup services --compose --recon`
+    # turns it on, or by hand: `docker compose --profile recon up -d`.
+    profiles: ["recon"]
+    ports:
+      # Keep the 127.0.0.1. bench-setup won't set recon up without it.
+      - "127.0.0.1:8403:8000"
+    volumes:
+      - recon-data:/data
+    restart: unless-stopped
+
+volumes:
+  intake-data:
+  parts-data:
+  recon-data:
