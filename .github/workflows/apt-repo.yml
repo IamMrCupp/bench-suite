@@ -116,7 +116,10 @@ jobs:
       - name: A tampered index is refused
         run: |
           cp -r repo tampered
-          echo "tampered" >> tampered/dists/stable/main/binary-amd64/Packages
+          # Both forms: apt reads whichever it prefers, usually the .gz.
+          index=tampered/dists/stable/main/binary-amd64/Packages
+          echo "tampered" >> "$index"
+          gzip -9 -k -n -f "$index"
           docker run --rm -v "$PWD/tampered":/opt/repo:ro ubuntu:26.04 sh -c '
             echo "deb [signed-by=/opt/repo/bench-archive-keyring.gpg] file:/opt/repo stable main" \
               > /etc/apt/sources.list.d/bench.list
