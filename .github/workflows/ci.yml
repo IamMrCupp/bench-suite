@@ -46,8 +46,6 @@ jobs:
   # config-wiring commands are the same ones the real one takes.
   compose-e2e:
     runs-on: ubuntu-latest
-    env:
-      BENCH_E2E_CONFIG: ${{ runner.temp }}/benchhud/config.toml
     steps:
       - uses: actions/checkout@v5
 
@@ -60,7 +58,9 @@ jobs:
         run: uv sync --frozen
 
       - name: Stand-in benchhud on PATH
-        run: echo "$PWD/tests/e2e/bin" >> "$GITHUB_PATH"
+        run: |
+          echo "$PWD/tests/e2e/bin" >> "$GITHUB_PATH"
+          echo "BENCH_E2E_CONFIG=$RUNNER_TEMP/benchhud/config.toml" >> "$GITHUB_ENV"
 
       - name: compose.yaml is valid
         run: docker compose -f compose.yaml config --quiet
