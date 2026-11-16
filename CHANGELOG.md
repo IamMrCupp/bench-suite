@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/IamMrCupp/bench-suite/compare/v1.1.0...v1.2.0) (2026-11-16)
+
+
+### Features
+
+* **deb:** package bench-setup and the bench-suite metapackage ([54a0608](https://github.com/IamMrCupp/bench-suite/commit/54a0608997c9c04d57ea83c8d3cf031d06aafcb7))
+
 ## [1.1.0](https://github.com/IamMrCupp/bench-suite/compare/v1.0.0...v1.1.0) (2026-11-16)
 
 
