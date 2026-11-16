@@ -1,0 +1,177 @@
+name: apt repo
+
+# Builds the signed apt repository and, off pull requests, publishes it to the
+# R2 bucket behind apt.yolorepair.com.
+#
+# - pull_request: build with a throwaway key, install from it on clean Ubuntu
+#   with signature checking on. Nothing is uploaded.
+# - a bench-suite release, the daily schedule, or a run by hand: the same
+#   build and install with the real key, then upload. The schedule is what
+#   picks up new releases of the other bench repos.
+
+on:
+  pull_request:
+    paths:
+      - packaging/apt/**
+      - packaging/deb/**
+      - .github/workflows/apt-repo.yml
+  workflow_run:
+    workflows: [release-please]
+    types: [completed]
+  schedule:
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apt-repo-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.key.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq apt-utils gnupg
+
+      # The real key only off pull requests, and only once the secret exists.
+      # Anything else signs with a key made for this run and thrown away.
+      - name: Signing key
+        id: key
+        env:
+          APT_SIGNING_KEY: ${{ github.event_name != 'pull_request' && secrets.APT_SIGNING_KEY || '' }}
+        run: |
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 700 "$GNUPGHOME"
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
+          if [ -n "$APT_SIGNING_KEY" ]; then
+            printf '%s\n' "$APT_SIGNING_KEY" | gpg --batch --quiet --import
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "Signing with the repository key."
+          else
+            gpg --batch --quiet --pinentry-mode loopback --passphrase '' --quick-generate-key "bench apt (throwaway)" ed25519 sign 1d
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "Signing with a throwaway key; nothing will be published."
+          fi
+          fpr=$(gpg --batch --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')
+          echo "KEY_ID=$fpr" >> "$GITHUB_ENV"
+
+      - name: Fetch the released packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh packaging/apt/fetch-debs.sh "$RUNNER_TEMP/debs"
+
+      # On a pull request, test with this branch's own bench-suite packages
+      # too, so a packaging change is installed before it's released.
+      - name: Add this branch's packages
+        if: github.event_name == 'pull_request'
+        run: |
+          sh packaging/deb/build.sh >/dev/null
+          cp dist/*.deb "$RUNNER_TEMP/debs/"
+
+      - name: Build the repository
+        run: sh packaging/apt/build-repo.sh "$RUNNER_TEMP/debs" "$RUNNER_TEMP/repo" "$KEY_ID"
+
+      - name: Forget the key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/gnupg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apt-repo
+          path: ${{ runner.temp }}/repo
+          if-no-files-found: error
+          retention-days: 3
+
+  # Install from the built tree the way a user would, signature checking on:
+  # no trusted=yes, the key comes from signed-by.
+  verify:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: apt-repo
+          path: repo
+
+      - name: apt install bench-suite on clean ubuntu:26.04
+        run: |
+          docker run --rm -v "$PWD/repo":/opt/repo:ro ubuntu:26.04 sh -ec '
+            echo "deb [signed-by=/opt/repo/bench-archive-keyring.gpg] file:/opt/repo stable main" \
+              > /etc/apt/sources.list.d/bench.list
+            apt-get update -qq
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq bench-suite >/dev/null
+            for pkg in bench-suite bench-setup benchhud benchhud-intake bench-parts; do
+              dpkg-query -W -f "\${Package} \${Version} \${db:Status-Abbrev}\n" "$pkg"
+            done
+            bench-setup --version
+          '
+
+      - name: A tampered index is refused
+        run: |
+          cp -r repo tampered
+          echo "tampered" >> tampered/dists/stable/main/binary-amd64/Packages
+          docker run --rm -v "$PWD/tampered":/opt/repo:ro ubuntu:26.04 sh -c '
+            echo "deb [signed-by=/opt/repo/bench-archive-keyring.gpg] file:/opt/repo stable main" \
+              > /etc/apt/sources.list.d/bench.list
+            if apt-get update 2>&1 | tee /tmp/out | grep -qiE "hash sum mismatch|size mismatch|does not match"; then
+              echo "refused, as it should be"
+            else
+              cat /tmp/out; echo "apt accepted a tampered index"; exit 1
+            fi
+          '
+
+  publish:
+    needs: [build, verify]
+    if: needs.build.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      AWS_EC2_METADATA_DISABLED: "true"
+      # R2 doesn't take the extra checksums newer AWS CLIs send by default.
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+      R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: apt-repo
+          path: repo
+
+      # Packages first, the index last: a client never sees an index that
+      # names a file that isn't there yet. A .deb's name carries its version,
+      # so it never changes and can be cached for good; the index is small and
+      # must be fresh.
+      - name: Upload the packages
+        run: |
+          aws s3 sync repo/pool "s3://$R2_BUCKET/pool" --endpoint-url "$R2_ENDPOINT" \
+            --cache-control "public, max-age=31536000, immutable" --no-progress
+
+      - name: Upload the index and the key
+        run: |
+          aws s3 sync repo/dists "s3://$R2_BUCKET/dists" --endpoint-url "$R2_ENDPOINT" \
+            --cache-control "public, max-age=300" --delete --no-progress
+          aws s3 cp repo/bench-archive-keyring.gpg "s3://$R2_BUCKET/bench-archive-keyring.gpg" \
+            --endpoint-url "$R2_ENDPOINT" --cache-control "public, max-age=3600" \
+            --content-type application/octet-stream --no-progress
+
+      # Retention: a package version that fell out of the last five releases
+      # is no longer in the index, so nothing will ask for it.
+      - name: Remove packages the index no longer lists
+        run: |
+          aws s3 sync repo/pool "s3://$R2_BUCKET/pool" --endpoint-url "$R2_ENDPOINT" \
+            --cache-control "public, max-age=31536000, immutable" --delete --no-progress
+
+      - name: The published repo answers
+        run: |
+          curl -fsS https://apt.yolorepair.com/dists/stable/InRelease | head -5
+          curl -fsSI https://apt.yolorepair.com/bench-archive-keyring.gpg | head -1
