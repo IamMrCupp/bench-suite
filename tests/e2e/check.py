@@ -5,7 +5,7 @@
 
 For each named service: the right app answers /healthz on its port, and the
 stand-in benchhud's config has its URL and a token. For each one not named:
-nothing answers on its port and the config has no section for it.
+nothing answers on its port and the config holds no token for it.
 """
 
 from __future__ import annotations
@@ -36,8 +36,10 @@ def main(wanted: set[str]) -> int:
         else:
             if body is not None:
                 problems.append(f"{service.name}: something answers on {service.default_port}")
-            if section is not None:
-                problems.append(f"{service.name}: benchhud has a [{service.section}] section")
+            # The real benchhud writes every section with its defaults, so an
+            # unwired service is one with no token, not one with no section.
+            if section and section.get("token"):
+                problems.append(f"{service.name}: benchhud's [{service.section}] has a token")
     for problem in problems:
         print(problem, file=sys.stderr)
     print("ok" if not problems else f"{len(problems)} problem(s)")
