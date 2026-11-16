@@ -413,7 +413,7 @@ class _Run:
                     ""
                     if self.options.interactive
                     else " Pipe one in: printf '%s\\n' \"$PASSWORD\" | bench-setup services"
-                    " --non-interactive"
+                    f" --non-interactive{' --compose' if self.options.compose else ''}"
                 )
                 raise _Failed(f"needs a password and didn't get one.{hint}")
             self._password = password

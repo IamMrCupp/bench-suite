@@ -22,6 +22,16 @@ from typing import Any
 _USER_PATH = "/usr/local/bin:/usr/bin:/bin"
 
 
+def _stdin(text: str | None) -> dict[str, Any]:
+    """What a command gets on stdin: ``text``, or nothing at all.
+
+    Never bench-setup's own stdin. A scripted run has the password waiting
+    there, and a command that inherited it (``docker compose run`` reads stdin)
+    would swallow it before bench-setup got to read it.
+    """
+    return {"input": text} if text is not None else {"stdin": subprocess.DEVNULL}
+
+
 def parse_settings(text: str) -> dict[str, str]:
     """``KEY=value`` pairs from the text of a settings.env.
 
@@ -78,7 +88,9 @@ class Host:
         Secrets go in on ``stdin`` and come back on stdout; never in ``cmd``,
         which anyone can read in ``ps``.
         """
-        done = subprocess.run(list(cmd), input=stdin, capture_output=True, text=True, check=False)
+        done = subprocess.run(
+            list(cmd), capture_output=True, text=True, check=False, **_stdin(stdin)
+        )
         return done.returncode, done.stdout, done.stderr
 
     def run_as_user(
@@ -106,7 +118,7 @@ class Host:
         }
         done = subprocess.run(
             list(cmd),
-            input=stdin,
+            **_stdin(stdin),
             capture_output=True,
             text=True,
             check=False,
