@@ -90,3 +90,136 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose -f compose.yaml --profile recon down --volumes
+
+  # The deb route for real. Builds this repo's two packages, puts them in a
+  # local apt repo with the released benchhud and service packages, and
+  # installs the lot on a clean ubuntu:26.04 running systemd as PID 1. Then an
+  # ordinary user runs `sudo bench-setup services`, the way an owner would.
+  deb-e2e:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build bench-setup and bench-suite
+        run: sh packaging/deb/build.sh
+
+      - name: Fetch the released benchhud, intake and parts packages
+        run: |
+          for repo in benchhud benchhud-intake bench-parts; do
+            gh release download -R "IamMrCupp/$repo" -p '*amd64.deb' -D dist
+          done
+
+      # bench-recon doesn't attach its .deb to releases yet (bench-recon#35).
+      # Until it does, build it from its latest release tag the way its own CI
+      # does: stage in ubuntu:26.04, pack on the runner.
+      - name: Fetch or build the bench-recon package
+        run: |
+          if gh release download -R IamMrCupp/bench-recon -p '*amd64.deb' -D dist; then exit 0; fi
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          export PATH="$HOME/.local/bin:$PATH"
+          tag=$(gh release view -R IamMrCupp/bench-recon --json tagName -q .tagName)
+          git clone -q --depth 1 --branch "$tag" https://github.com/IamMrCupp/bench-recon "$RUNNER_TEMP/recon"
+          cd "$RUNNER_TEMP/recon"
+          uv export --frozen --no-dev --no-hashes --no-emit-project -q > requirements.txt
+          docker run --rm -e DEB_ROOT=/src/build/debroot -e STAGE_ONLY=1 \
+            -v "$PWD":/src -w /src ubuntu:26.04 sh packaging/deb/build.sh
+          dpkg-deb --build --root-owner-group build/debroot "$GITHUB_WORKSPACE/dist/"
+
+      - name: Make a local apt repo of the six packages
+        run: |
+          cd dist
+          ls -l
+          test "$(ls *.deb | wc -l)" = 6
+          dpkg-scanpackages --multiversion . > Packages
+
+      - name: Boot ubuntu:26.04 with systemd and an ordinary user
+        run: |
+          printf '%s\n' \
+            'FROM ubuntu:26.04' \
+            'RUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends systemd systemd-sysv dbus sudo && rm -rf /var/lib/apt/lists/*' \
+            'RUN useradd --create-home --shell /bin/bash bench && echo "bench ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/bench' \
+            'STOPSIGNAL SIGRTMIN+3' \
+            'CMD ["/sbin/init"]' > "$RUNNER_TEMP/Dockerfile.systemd"
+          docker build -q -t sd -f "$RUNNER_TEMP/Dockerfile.systemd" "$RUNNER_TEMP"
+          docker run -d --name sd --privileged --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw sd
+          for _ in $(seq 30); do
+            state=$(docker exec sd systemctl is-system-running 2>/dev/null || true)
+            case "$state" in running|degraded) break ;; esac
+            sleep 1
+          done
+          echo "systemd: $state"
+          # Not /tmp: systemd mounts a tmpfs over it, hiding what docker cp puts there.
+          docker exec sd mkdir -p /opt/dist /opt/e2e
+          docker cp dist/. sd:/opt/dist/
+          docker cp tests/e2e/check.py sd:/opt/e2e/check.py
+
+      - name: apt install bench-suite pulls in everything
+        run: |
+          docker exec sd sh -ec '
+            echo "deb [trusted=yes] file:/opt/dist ./" > /etc/apt/sources.list.d/bench.list
+            apt-get update -qq
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq bench-suite
+            for pkg in bench-suite bench-setup benchhud benchhud-intake bench-parts bench-recon; do
+              dpkg-query -W -f "\${Package} \${Version} \${db:Status-Abbrev}\n" "$pkg"
+            done
+            bench-setup --version
+            test -f /usr/share/bench-suite/compose.yaml
+            test "$(systemctl is-enabled bench-recon || true)" = disabled
+          '
+
+      - name: Without sudo it says so and changes nothing
+        run: |
+          code=0
+          docker exec -u bench sd bench-setup services --non-interactive < /dev/null || code=$?
+          test "$code" = 2
+
+      - name: sudo bench-setup services sets up intake and parts, leaves recon off
+        run: |
+          openssl rand -hex 16 > "$RUNNER_TEMP/password"
+          docker exec -i -u bench -e HOME=/home/bench sd \
+            sudo bench-setup services --non-interactive < "$RUNNER_TEMP/password"
+          config=$(docker exec -u bench -e HOME=/home/bench sd benchhud config path)
+          echo "BENCH_CONFIG=$config" >> "$GITHUB_ENV"
+          docker exec -u bench -e PYTHONPATH=/usr/share/bench-setup -e BENCH_E2E_CONFIG="$config" sd \
+            python3 /opt/e2e/check.py intake parts
+          docker exec sd sh -ec "
+            test \"\$(stat -c %U:%a '$config')\" = bench:600
+            for name in benchhud-intake bench-parts; do
+              test \"\$(stat -c %U:%a /var/lib/\$name/settings.env)\" = root:600
+              pid=\$(systemctl show -p MainPID --value \$name)
+              test \"\$(stat -c %U /proc/\$pid)\" = \$name
+            done
+            test \"\$(systemctl is-enabled bench-recon || true)\" = disabled
+            test ! -e /var/lib/bench-recon/settings.env
+          "
+
+      - name: A re-run changes nothing
+        run: |
+          before=$(docker exec sd sha256sum "$BENCH_CONFIG" /var/lib/benchhud-intake/settings.env /var/lib/bench-parts/settings.env)
+          docker exec -u bench -e HOME=/home/bench sd \
+            sudo bench-setup services --non-interactive < /dev/null | tee "$RUNNER_TEMP/rerun.txt"
+          test "$(grep -c 'already set up' "$RUNNER_TEMP/rerun.txt")" = 2
+          after=$(docker exec sd sha256sum "$BENCH_CONFIG" /var/lib/benchhud-intake/settings.env /var/lib/bench-parts/settings.env)
+          test "$before" = "$after"
+
+      - name: --recon turns bench-recon on
+        run: |
+          docker exec -i -u bench -e HOME=/home/bench sd \
+            sudo bench-setup services --non-interactive --recon < "$RUNNER_TEMP/password"
+          docker exec -u bench -e PYTHONPATH=/usr/share/bench-setup -e BENCH_E2E_CONFIG="$BENCH_CONFIG" sd \
+            python3 /opt/e2e/check.py intake parts recon
+          docker exec sd sh -ec '
+            test "$(systemctl is-enabled bench-recon)" = enabled
+            # Loopback only: recon listens on 127.0.0.1:8403 and nowhere else.
+            grep -E "^ *[0-9]+: 0100007F:20D3 .* 0A " /proc/net/tcp
+            ! grep -qE ":20D3 .* 0A " /proc/net/tcp6
+          '
+
+      - name: Service logs
+        if: failure()
+        run: |
+          for name in benchhud-intake bench-parts bench-recon; do
+            docker exec sd journalctl -u "$name" --no-pager -n 30 || true
+          done

@@ -1,0 +1,14 @@
+#!/usr/bin/python3 -IB
+# The bench-setup command, as the .deb installs it.
+#
+# -I: isolated. It usually runs as root, so it ignores PYTHONPATH, the user's
+# site-packages and the current folder, and loads only its own code and the
+# standard library. -B: write no bytecode, so nothing the package doesn't own
+# appears under /usr/share.
+import sys
+
+sys.path.insert(0, "/usr/share/bench-setup")
+
+from bench_setup.cli import main  # noqa: E402
+
+sys.exit(main())

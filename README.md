@@ -2,7 +2,7 @@
 
 One install for the repair bench. **bench-suite** sets up the four bench apps on one machine and wires them to each other, so a fresh box goes from nothing to a working bench without hand-copying URLs and tokens between configs.
 
-> **Status: under construction.** `bench-setup services` exists, and its container route runs against the real service images in CI; the packages and the apt repo that deliver it don't yet. The pieces land one change at a time.
+> **Status: under construction.** The `bench-setup` and `bench-suite` packages build, and CI installs them with the four apps on a clean Ubuntu 26.04 and runs the setup end to end. What's missing is the apt repo that delivers them. The pieces land one change at a time.
 
 ## What it puts together
 
