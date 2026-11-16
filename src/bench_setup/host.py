@@ -22,6 +22,32 @@ from typing import Any
 _USER_PATH = "/usr/local/bin:/usr/bin:/bin"
 
 
+def _stdin(text: str | None) -> dict[str, Any]:
+    """What a command gets on stdin: ``text``, or nothing at all.
+
+    Never bench-setup's own stdin. A scripted run has the password waiting
+    there, and a command that inherited it (``docker compose run`` reads stdin)
+    would swallow it before bench-setup got to read it.
+    """
+    return {"input": text} if text is not None else {"stdin": subprocess.DEVNULL}
+
+
+def parse_settings(text: str) -> dict[str, str]:
+    """``KEY=value`` pairs from the text of a settings.env.
+
+    The same format the services write and systemd reads as an
+    EnvironmentFile: blank lines and ``#`` comments are skipped.
+    """
+    values: dict[str, str] = {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        values[key.strip()] = value.strip()
+    return values
+
+
 class Host:
     """The real machine."""
 
@@ -32,6 +58,12 @@ class Host:
         """Who ran ``sudo bench-setup``: the desktop user benchhud belongs to."""
         name = os.environ.get("SUDO_USER", "").strip()
         return name if name and name != "root" else None
+
+    def current_user(self) -> str:
+        return pwd.getpwuid(os.geteuid()).pw_name
+
+    def is_file(self, path: Path) -> bool:
+        return path.is_file()
 
     def user_exists(self, user: str) -> bool:
         try:
@@ -44,23 +76,11 @@ class Host:
         return shutil.which(command) is not None
 
     def read_settings(self, path: Path) -> dict[str, str]:
-        """``KEY=value`` pairs from a service's settings.env; missing counts as empty.
-
-        The same format the services write and systemd reads as an
-        EnvironmentFile: blank lines and ``#`` comments are skipped.
-        """
+        """A service's settings.env as a dict; missing or unreadable counts as empty."""
         try:
-            text = path.read_text("utf-8")
+            return parse_settings(path.read_text("utf-8"))
         except (FileNotFoundError, PermissionError):
             return {}
-        values: dict[str, str] = {}
-        for raw in text.splitlines():
-            line = raw.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            values[key.strip()] = value.strip()
-        return values
 
     def run(self, cmd: Sequence[str], stdin: str | None = None) -> tuple[int, str, str]:
         """Run ``cmd`` as root. Returns ``(exit code, stdout, stderr)``.
@@ -68,7 +88,9 @@ class Host:
         Secrets go in on ``stdin`` and come back on stdout; never in ``cmd``,
         which anyone can read in ``ps``.
         """
-        done = subprocess.run(list(cmd), input=stdin, capture_output=True, text=True, check=False)
+        done = subprocess.run(
+            list(cmd), capture_output=True, text=True, check=False, **_stdin(stdin)
+        )
         return done.returncode, done.stdout, done.stderr
 
     def run_as_user(
@@ -78,7 +100,14 @@ class Host:
 
         benchhud finds its config through HOME, so root's environment must not
         leak in: the file would land in /root, or be created root-owned.
+
+        Without root (the compose route needs none) the only user it can run as
+        is the one already running bench-setup, in that user's own environment.
         """
+        if not self.is_root():
+            if user != self.current_user():
+                return 1, "", f"can't run as {user} without root"
+            return self.run(cmd, stdin=stdin)
         entry = pwd.getpwnam(user)
         env = {
             "HOME": entry.pw_dir,
@@ -89,7 +118,7 @@ class Host:
         }
         done = subprocess.run(
             list(cmd),
-            input=stdin,
+            **_stdin(stdin),
             capture_output=True,
             text=True,
             check=False,

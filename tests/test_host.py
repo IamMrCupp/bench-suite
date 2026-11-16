@@ -9,6 +9,7 @@ from __future__ import annotations
 import http.server
 import io
 import json
+import subprocess
 import sys
 import threading
 
@@ -158,3 +159,26 @@ def test_a_mismatch_or_a_blank_asks_again_then_gives_up(monkeypatch, capsys) -> 
 def test_yes_no_defaults_to_no(monkeypatch, typed, expected) -> None:
     monkeypatch.setattr("builtins.input", lambda _: typed)
     assert TerminalUI(interactive=True).ask_yes_no("Turn on bench-recon?") is expected
+
+
+def test_commands_never_read_bench_setups_own_stdin() -> None:
+    """A piped password must still be there after bench-setup runs a command.
+
+    Found by the compose end-to-end job: ``docker compose run`` inherited stdin
+    and ate the password before it was read.
+    """
+    script = (
+        "import sys\n"
+        "from bench_setup.host import Host\n"
+        "Host().run(['cat'])\n"
+        "print(sys.stdin.readline().strip())\n"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", script],
+        input="still-here\n",
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    )
+    assert done.stdout.strip() == "still-here"

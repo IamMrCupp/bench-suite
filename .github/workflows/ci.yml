@@ -40,3 +40,53 @@ jobs:
 
       - name: bench-setup runs
         run: uv run bench-setup --version
+
+  # The compose route for real: the published service images, real docker
+  # compose, no root. benchhud is a stand-in (tests/e2e/bin/benchhud); the
+  # config-wiring commands are the same ones the real one takes.
+  compose-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Sync (frozen)
+        run: uv sync --frozen
+
+      - name: Stand-in benchhud on PATH
+        run: |
+          echo "$PWD/tests/e2e/bin" >> "$GITHUB_PATH"
+          echo "BENCH_E2E_CONFIG=$RUNNER_TEMP/benchhud/config.toml" >> "$GITHUB_ENV"
+
+      - name: compose.yaml is valid
+        run: docker compose -f compose.yaml config --quiet
+
+      - name: First run sets up intake and parts, leaves recon off
+        run: |
+          openssl rand -hex 16 > "$RUNNER_TEMP/password"
+          uv run bench-setup services --compose --non-interactive < "$RUNNER_TEMP/password"
+          uv run python tests/e2e/check.py intake parts
+
+      - name: A re-run changes nothing
+        run: |
+          before="$(sha256sum "$BENCH_E2E_CONFIG")"
+          uv run bench-setup services --compose --non-interactive < /dev/null | tee "$RUNNER_TEMP/rerun.txt"
+          test "$(grep -c 'already set up' "$RUNNER_TEMP/rerun.txt")" = 2
+          test "$before" = "$(sha256sum "$BENCH_E2E_CONFIG")"
+
+      - name: --recon turns bench-recon on
+        run: |
+          uv run bench-setup services --compose --non-interactive --recon < "$RUNNER_TEMP/password"
+          uv run python tests/e2e/check.py intake parts recon
+
+      - name: Container logs
+        if: failure()
+        run: docker compose -f compose.yaml --profile recon logs --no-color --tail 50
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f compose.yaml --profile recon down --volumes

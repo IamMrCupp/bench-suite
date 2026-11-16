@@ -1,0 +1,37 @@
+#!/usr/bin/env python3
+"""A stand-in for benchhud in the compose end-to-end job.
+
+Only the two commands bench-setup uses: ``config path`` and
+``config set SECTION.KEY -`` (value on stdin). CI has no benchhud to install,
+and this keeps the job about bench-setup and the service images.
+"""
+
+import os
+import sys
+import tomllib
+from pathlib import Path
+
+CONFIG = Path(os.environ["BENCH_E2E_CONFIG"])
+
+
+def main(argv: list[str]) -> int:
+    if argv == ["config", "path"]:
+        print(CONFIG)
+        return 0
+    if len(argv) == 4 and argv[:2] == ["config", "set"] and argv[3] == "-":
+        section, key = argv[2].split(".")
+        data = tomllib.loads(CONFIG.read_text()) if CONFIG.exists() else {}
+        data.setdefault(section, {})[key] = sys.stdin.read()
+        lines = []
+        for name, values in data.items():
+            lines.append(f"[{name}]")
+            lines += [f'{k} = "{v}"' for k, v in values.items()]
+        CONFIG.parent.mkdir(parents=True, exist_ok=True)
+        CONFIG.write_text("\n".join(lines) + "\n")
+        return 0
+    print(f"stub benchhud: unexpected arguments {argv}", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
