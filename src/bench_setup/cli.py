@@ -114,7 +114,8 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Walk through the host steps from benchhud's BENCH-SETUP.md: the v4l2loopback "
             "node benchhud sends its picture to OBS through, uvcvideo dropping torn frames, "
-            "and the ARP settings for a bench with two network cards on one subnet. Each step "
+            "the ARP settings for a bench with two network cards on one subnet, the account's "
+            "groups, and letting it run uhubctl to reset a hung camera. Each step "
             "shows the file it would write and asks first. Steps that don't apply are skipped, "
             "and it's safe to run again."
         ),

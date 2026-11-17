@@ -110,12 +110,12 @@ class Host:
         except KeyError:
             return None
 
-    def write_file(self, path: Path, text: str) -> None:
-        """Write a root-owned, world-readable config file, whole or not at all."""
+    def write_file(self, path: Path, text: str, mode: int = 0o644) -> None:
+        """Write a root-owned config file, whole or not at all. World-readable unless told."""
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(f".{path.name}.bench-setup")
         tmp.write_text(text, "utf-8")
-        tmp.chmod(0o644)
+        tmp.chmod(mode)
         tmp.replace(path)
 
     def write_value(self, path: Path, value: str) -> bool:
@@ -138,6 +138,11 @@ class Host:
 
     def installed(self, command: str) -> bool:
         return shutil.which(command) is not None
+
+    def which(self, command: str) -> str | None:
+        """Where a command really lives, links followed, or None if it isn't installed."""
+        found = shutil.which(command)
+        return os.path.realpath(found) if found else None
 
     def is_macos(self) -> bool:
         return sys.platform == "darwin"

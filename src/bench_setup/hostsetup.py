@@ -11,6 +11,7 @@ document, even at the same path, is never touched.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -34,9 +35,23 @@ NODROP_OPTIONS = Path("/etc/modprobe.d/benchhud-uvcvideo.conf")
 ARP_SYSCTL = Path("/etc/sysctl.d/60-benchhud-arp.conf")
 CAMERA_RULES = Path("/etc/udev/rules.d/70-benchhud-cameras.rules")
 THERMAL_RULE = Path("/etc/udev/rules.d/60-benchhud-thermal.rules")
+UHUBCTL_SUDOERS = Path("/etc/sudoers.d/benchhud-uhubctl")
 #: Everything bench-setup host and bench-setup cameras can write, and so
 #: everything --undo may remove.
-OURS = (LOOPBACK_OPTIONS, LOOPBACK_LOAD, NODROP_OPTIONS, ARP_SYSCTL, CAMERA_RULES, THERMAL_RULE)
+OURS = (
+    LOOPBACK_OPTIONS,
+    LOOPBACK_LOAD,
+    NODROP_OPTIONS,
+    ARP_SYSCTL,
+    CAMERA_RULES,
+    THERMAL_RULE,
+    UHUBCTL_SUDOERS,
+)
+
+#: BENCH-SETUP.md: serial ports, V4L2 cameras, USB devices.
+GROUPS = ("dialout", "video", "plugdev")
+#: A user name that's safe to write into a sudoers line as it stands.
+_PLAIN_USER = re.compile(r"[a-z_][a-z0-9_-]*\$?")
 
 #: Loopback layouts from BENCH-SETUP.md: how many nodes, their numbers and labels.
 LAYOUTS: dict[int, tuple[tuple[int, str], ...]] = {
@@ -81,6 +96,10 @@ def loopback_options(nodes: int) -> str:
         f"options v4l2loopback devices={nodes} video_nr={numbers} "
         f"card_label={labels} exclusive_caps={caps}"
     )
+
+
+def _and(names: list[str]) -> str:
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
 
 
 def marked(*lines: str) -> str:
@@ -315,6 +334,92 @@ class _Steps:
             "nmcli connection down NAME; nmcli connection up NAME"
         )
 
+    # -- the account's groups ---------------------------------------------
+
+    def groups(self) -> None:
+        host, ui, user = self.host, self.ui, self.user
+        if user is None or not host.user_exists(user):
+            return  # no desktop account to look at: run with sudo, or pass --user
+        code, out, _ = host.run(["id", "-nG", user])
+        if code != 0:
+            return
+        have = set(out.split())
+        # A group this system doesn't have is nothing to join.
+        wanted = [g for g in GROUPS if host.run(["getent", "group", g])[0] == 0]
+        missing = [g for g in wanted if g not in have]
+        if not missing:
+            ui.say(f"groups: {user} is already in {_and(wanted)}")
+            return
+        ui.say(f"groups: {user} isn't in {_and(missing)}")
+        ui.say(
+            "  benchhud opens the serial instruments through dialout, the cameras through "
+            "video and USB devices through plugdev. Without them it can't reach them."
+        )
+        if not self._ask(f"Add {user} to {_and(missing)}?"):
+            ui.say("  left alone")
+            return
+        code, _, err = host.run(["usermod", "-aG", ",".join(missing), user])
+        if code != 0:
+            tail = err.strip().splitlines()[-1] if err.strip() else f"exit {code}"
+            self._fail(f"groups: couldn't add {user}: {tail}")
+            return
+        ui.say(f"  added. {user} has to log out and back in before it takes effect.")
+
+    # -- resetting a hung camera ------------------------------------------
+
+    def uhubctl(self) -> None:
+        host, ui, user = self.host, self.ui, self.user
+        binary = host.which("uhubctl")
+        if binary is None or user is None or not host.user_exists(user):
+            return
+        code, out, _ = host.run([binary])
+        hubs = [ln.strip() for ln in out.splitlines() if "ppps" in ln] if code == 0 else []
+        if not hubs:
+            return  # no hub here can switch its ports
+        if host.exists(UHUBCTL_SUDOERS):
+            whose = "" if self._ours(UHUBCTL_SUDOERS) else " (not written by bench-setup)"
+            ui.say(f"uhubctl: {UHUBCTL_SUDOERS} is already there{whose}")
+            return
+        # Set up by hand under another name: the document's line, in any file.
+        for name in host.glob("/etc/sudoers.d/*"):
+            text = host.read_text(Path(name)) or ""
+            live = [ln for ln in text.splitlines() if not ln.lstrip().startswith("#")]
+            if any("NOPASSWD" in ln and "uhubctl" in ln for ln in live):
+                ui.say(f"uhubctl: {name} already lets an account run it without a password")
+                return
+        if not _PLAIN_USER.fullmatch(user):
+            ui.say(f"uhubctl: {user!r} isn't a name bench-setup will put in a sudoers file")
+            return
+        text = marked(f"{user} ALL=(root) NOPASSWD: {binary}")
+        ui.say(f"uhubctl: {len(hubs)} hub{'s' * (len(hubs) != 1)} here can switch its ports:")
+        for hub in hubs:
+            ui.say(f"    {hub}")
+        ui.say(
+            "  benchhud can power-cycle the port of a camera that stays gone, but only if "
+            f"{user} may run uhubctl as root without a password. That's all this allows."
+        )
+        self._show(UHUBCTL_SUDOERS, text)
+        if not self._ask(f"Let {user} run uhubctl without a password?"):
+            ui.say("  left alone")
+            return
+        # A bad file in sudoers.d can lock sudo out: check before, and after.
+        code, _, err = host.run(["visudo", "-cf", "-"], stdin=text)
+        if code != 0:
+            tail = err.strip().splitlines()[-1] if err.strip() else f"exit {code}"
+            self._fail(f"uhubctl: visudo wouldn't accept the file, so it wasn't written: {tail}")
+            return
+        host.write_file(UHUBCTL_SUDOERS, text, mode=0o440)
+        if host.run(["visudo", "-c"])[0] != 0:
+            host.remove(UHUBCTL_SUDOERS)
+            self._fail("uhubctl: sudo's own check failed with the file in place, so it's removed")
+            return
+        ui.say(f"  wrote {UHUBCTL_SUDOERS}")
+        ui.say(
+            "  Now tell benchhud which port the thermal camera is on. `sudo uhubctl` lists "
+            'them; in benchhud\'s config: [panels.thermal] reset_port = "HUB:PORT", '
+            'like "1-4:4".'
+        )
+
     # -- undo -------------------------------------------------------------
 
     def undo(self) -> None:
@@ -347,7 +452,8 @@ class _Steps:
             ui.say("reloaded udev; the /dev/cam-* names go when the cameras are next plugged in")
         ui.say(
             "What's running now stays as it is until the next reboot: a loaded module, the "
-            f"live nodrop value and the live ARP settings under {ARP} aren't changed back."
+            f"live nodrop value and the live ARP settings under {ARP} aren't changed back. "
+            "Groups an account was added to are kept too."
         )
 
 
@@ -369,6 +475,6 @@ def run(options: Options, host: Host | None = None, ui: UI | None = None) -> int
     if options.undo:
         steps.undo()
     else:
-        for step in (steps.loopback, steps.nodrop, steps.arp):
+        for step in (steps.loopback, steps.nodrop, steps.arp, steps.groups, steps.uhubctl):
             step()
     return EXIT_FAILED if steps.failed else EXIT_OK
