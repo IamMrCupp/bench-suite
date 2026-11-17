@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.6.0](https://github.com/IamMrCupp/bench-suite/compare/v1.5.7...v1.6.0) (2026-11-17)
+
+
+### Features
+
+* **doctor:** check the containers with --compose ([#62](https://github.com/IamMrCupp/bench-suite/issues/62)) ([2a03e2c](https://github.com/IamMrCupp/bench-suite/commit/2a03e2c6f0d7c610e8d3f2c716d3c52bb66a98d2))
+* **host:** the account's groups and the uhubctl sudoers line ([#64](https://github.com/IamMrCupp/bench-suite/issues/64)) ([0cc9f10](https://github.com/IamMrCupp/bench-suite/commit/0cc9f109102cb8584900a3993278f1c938bd6645))
+
+
+### Bug Fixes
+
+* **host:** see a uhubctl sudoers line written by hand under another name ([#64](https://github.com/IamMrCupp/bench-suite/issues/64)) ([ceaf32f](https://github.com/IamMrCupp/bench-suite/commit/ceaf32f472d5bbddd87933bf34b9b03fa6030ad0))
+
 ## [1.5.7](https://github.com/IamMrCupp/bench-suite/compare/v1.5.6...v1.5.7) (2026-11-17)
 
 
