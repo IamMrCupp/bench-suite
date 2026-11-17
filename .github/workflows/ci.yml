@@ -67,6 +67,85 @@ jobs:
           uv run bench-setup services --non-interactive < /dev/null || code=$?
           test "$code" = 1
 
+      # The real thing: the released menu-bar apps, set up by bench-setup. The
+      # apps are opened on the runner's desktop session and serve for real.
+      # benchhud is the stand-in the compose job uses; its Mac app has no
+      # release to download yet.
+      - name: Install the released benchhud-intake and bench-parts apps
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/apps"
+          for repo in benchhud-intake bench-parts; do
+            got=""
+            for tag in $(gh release list -R "IamMrCupp/$repo" --exclude-drafts --exclude-pre-releases -L 5 --json tagName -q '.[].tagName'); do
+              if gh release download "$tag" -R "IamMrCupp/$repo" -p '*.app.zip' -p '*.dmg' -D "$RUNNER_TEMP/apps/$repo" 2>/dev/null; then
+                got=$tag; break
+              fi
+            done
+            test -n "$got" || { echo "no release of $repo carries a Mac app"; exit 1; }
+            echo "$repo $got"
+            for zip in "$RUNNER_TEMP/apps/$repo"/*.zip; do
+              [ -e "$zip" ] && ditto -x -k "$zip" /Applications
+            done
+            for dmg in "$RUNNER_TEMP/apps/$repo"/*.dmg; do
+              [ -e "$dmg" ] || continue
+              mount=$(mktemp -d)
+              hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mount" >/dev/null
+              cp -R "$mount"/*.app /Applications/
+              hdiutil detach "$mount" >/dev/null
+            done
+          done
+          ls -d /Applications/bench*.app
+
+      - name: bench-setup services sets the apps up, with no sudo
+        run: |
+          export BENCH_E2E_CONFIG="$RUNNER_TEMP/benchhud.toml"
+          echo "BENCH_E2E_CONFIG=$BENCH_E2E_CONFIG" >> "$GITHUB_ENV"
+          echo "$PWD/tests/e2e/bin" >> "$GITHUB_PATH"
+          export PATH="$PWD/tests/e2e/bin:$PATH"
+          openssl rand -hex 16 > "$RUNNER_TEMP/password"
+          uv run bench-setup services --non-interactive < "$RUNNER_TEMP/password" | tee "$RUNNER_TEMP/services.txt"
+          grep -q "benchhud-intake: set up, on 127.0.0.1:8401, benchhud wired" "$RUNNER_TEMP/services.txt"
+          grep -q "bench-parts: set up, on 127.0.0.1:8402, benchhud wired" "$RUNNER_TEMP/services.txt"
+          grep -q "bench-recon: has no Mac app" "$RUNNER_TEMP/services.txt"
+          uv run python tests/e2e/check.py intake parts
+          ! grep -qF "$(cat "$RUNNER_TEMP/password")" "$RUNNER_TEMP/services.txt"
+
+      - name: A re-run changes nothing and leaves the apps running
+        run: |
+          before=$(shasum "$BENCH_E2E_CONFIG" "$HOME/Library/Application Support"/bench*/settings.env)
+          uv run bench-setup services --non-interactive < /dev/null | tee "$RUNNER_TEMP/rerun.txt"
+          test "$(grep -c 'already set up' "$RUNNER_TEMP/rerun.txt")" = 2
+          after=$(shasum "$BENCH_E2E_CONFIG" "$HOME/Library/Application Support"/bench*/settings.env)
+          test "$before" = "$after"
+          pgrep -x "benchhud intake" && pgrep -x "bench parts"
+
+      - name: doctor finds both apps healthy, and sees one that was quit
+        run: |
+          uv run bench-setup doctor | tee "$RUNNER_TEMP/doctor.txt"
+          for name in benchhud-intake bench-parts; do
+            grep -E "^  ok +$name: answering on 127\.0\.0\.1:840[12], password set, token set, benchhud wired$" "$RUNNER_TEMP/doctor.txt"
+          done
+          ! grep -q FAIL "$RUNNER_TEMP/doctor.txt"
+          osascript -e 'tell application "bench parts" to quit'
+          for _ in $(seq 20); do pgrep -x "bench parts" >/dev/null || break; sleep 0.5; done
+          uv run bench-setup doctor | grep -q "bench-parts: the bench parts app isn't running"
+
+      - name: A new token means the running app is quit and reopened
+        run: |
+          uv run bench-setup services --non-interactive < /dev/null
+          settings="$HOME/Library/Application Support/benchhud-intake/settings.env"
+          old=$(sed -n 's/^INTAKE_API_TOKEN=//p' "$settings")
+          sed -i '' '/^INTAKE_API_TOKEN=/d' "$settings"
+          pid=$(pgrep -x "benchhud intake")
+          uv run bench-setup services --non-interactive < /dev/null | tee "$RUNNER_TEMP/retoken.txt"
+          grep -q "benchhud-intake: set up" "$RUNNER_TEMP/retoken.txt"
+          new=$(sed -n 's/^INTAKE_API_TOKEN=//p' "$settings")
+          test -n "$new" && test "$new" != "$old"
+          test "$(pgrep -x "benchhud intake")" != "$pid"
+          uv run python tests/e2e/check.py intake parts
+
   # The compose route for real: the published service images, real docker
   # compose, no root. benchhud is a stand-in (tests/e2e/bin/benchhud); the
   # config-wiring commands are the same ones the real one takes.
