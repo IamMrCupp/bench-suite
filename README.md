@@ -2,7 +2,7 @@
 
 One install for the repair bench. **bench-suite** sets up the four bench apps on one machine and wires them to each other, so a fresh box goes from nothing to a working bench without hand-copying URLs and tokens between configs.
 
-> **Status: installable on Ubuntu 26.04, amd64.** The signed apt repo is live at `apt.yolorepair.com`, and CI installs from it on a clean machine. On a Mac, a [Homebrew tap](https://github.com/IamMrCupp/homebrew-bench) installs benchhud and `bench-setup`, which wires the apps together.
+> **Status: installable on Ubuntu 26.04, amd64.** The signed apt repo is live at `apt.yolorepair.com`, and CI installs from it on a clean machine. On a Mac, a [Homebrew tap](https://github.com/IamMrCupp/homebrew-bench) installs the three apps and `bench-setup`, which wires them together, and CI does the same on a clean Mac.
 
 ## What it puts together
 
@@ -111,12 +111,12 @@ There's no apt and no systemd on a Mac, and none of the host steps apply: benchh
 
 ```sh
 brew tap iammrcupp/bench
-brew install --cask benchhud     # the app: signed and notarized
-brew install bench-setup
-bench-setup                      # no sudo: the apps are yours
+brew trust --tap iammrcupp/bench   # Homebrew asks before a tap's casks may pull each other in
+brew install --cask bench-suite    # benchhud, both menu-bar apps, bench-setup
+bench-setup                        # no sudo: the apps are yours
 ```
 
-The [tap](https://github.com/IamMrCupp/homebrew-bench) carries benchhud and `bench-setup`, and `brew upgrade` keeps both current. The two menu-bar apps aren't in it yet — they need notarized builds first — so get those from the [benchhud-intake](https://github.com/IamMrCupp/benchhud-intake/releases) and [bench-parts](https://github.com/IamMrCupp/bench-parts/releases) releases and put them in Applications.
+The [tap](https://github.com/IamMrCupp/homebrew-bench) carries all three apps — signed with a Developer ID and notarized, Apple silicon only — and `bench-setup`. `brew upgrade` keeps them current. The `bench-suite` cask has nothing of its own; it pulls in the rest. Each piece also installs by name (`brew install --cask benchhud`, `benchhud-intake`, `bench-parts`; `brew install bench-setup`), and that needs no `brew trust`.
 
 - **benchhud-intake and bench-parts** are menu-bar apps. `bench-setup services` sets the password and makes the token through each app's own binary, opens the app (or quits and reopens one that was running with old settings), and writes the URLs and tokens into benchhud's config.
 - **A freshly installed app has to be opened by you once.** macOS asks before the first launch of anything downloaded, and only you can answer. `bench-setup` sets the password and token, then tells you to open the app from Applications and run it again; the second run wires it up.
