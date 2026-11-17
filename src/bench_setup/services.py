@@ -47,7 +47,12 @@ PASSWORD_TRIES = 3
 
 #: Where the compose file is looked for when ``--compose`` names none: the
 #: current folder first, then where the bench-suite package installs it.
-COMPOSE_FILES = (Path("compose.yaml"), Path("/usr/share/bench-suite/compose.yaml"))
+COMPOSE_FILES = (
+    Path("compose.yaml"),
+    Path("/usr/share/bench-suite/compose.yaml"),
+    # Beside the package itself: where the Homebrew formula puts it.
+    Path(__file__).resolve().parent.parent / "compose.yaml",
+)
 
 #: The port every service listens on inside its container, and where its
 #: volume keeps settings.env.
@@ -58,7 +63,7 @@ _LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 
 #: The oldest benchhud Mac app whose binary answers ``config`` on stdout. An
 #: older one opens its window and waits instead.
-BENCHHUD_MAC_MIN = (0, 14, 3)
+BENCHHUD_MAC_MIN = (0, 14, 4)
 
 
 def benchhud_mac_too_old(host: Host, user: str | None) -> str | None:
