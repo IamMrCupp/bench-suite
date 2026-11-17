@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.4](https://github.com/IamMrCupp/bench-suite/compare/v1.5.3...v1.5.4) (2026-11-17)
+
+
+### Bug Fixes
+
+* **license:** relicense to AGPL-3.0-or-later ([25d66dd](https://github.com/IamMrCupp/bench-suite/commit/25d66dd5e93950145178f1ad26e17c1959eaa9a9))
+
 ## [1.5.3](https://github.com/IamMrCupp/bench-suite/compare/v1.5.2...v1.5.3) (2026-11-17)
 
 
