@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.6](https://github.com/IamMrCupp/bench-suite/compare/v1.5.5...v1.5.6) (2026-11-17)
+
+
+### Bug Fixes
+
+* **apt:** don't let the edge cache the index ([#55](https://github.com/IamMrCupp/bench-suite/issues/55)) ([45250b6](https://github.com/IamMrCupp/bench-suite/commit/45250b67e8ba5e914b6ec90979abed35bf9c2f1b))
+* **apt:** warn, don't fail, on a cached index ([#55](https://github.com/IamMrCupp/bench-suite/issues/55)) ([d7b9482](https://github.com/IamMrCupp/bench-suite/commit/d7b948290dd2dedaf8b55ad1d6bb11aef09aa2bd))
+
 ## [1.5.5](https://github.com/IamMrCupp/bench-suite/compare/v1.5.4...v1.5.5) (2026-11-17)
 
 
