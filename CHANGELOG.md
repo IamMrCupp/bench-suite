@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.5](https://github.com/IamMrCupp/bench-suite/compare/v1.5.4...v1.5.5) (2026-11-17)
+
+
+### Bug Fixes
+
+* **macos:** don't hang on macOS's first-launch prompt for a new app ([83ef1ea](https://github.com/IamMrCupp/bench-suite/commit/83ef1ea03b07a3f0ed56567ba1884428b9438138))
+
 ## [1.5.4](https://github.com/IamMrCupp/bench-suite/compare/v1.5.3...v1.5.4) (2026-11-17)
 
 
