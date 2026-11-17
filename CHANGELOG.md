@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.3.0](https://github.com/IamMrCupp/bench-suite/compare/v1.2.0...v1.3.0) (2026-11-17)
+
+
+### Features
+
+* **doctor:** read-only checks of the services and the host ([19a380e](https://github.com/IamMrCupp/bench-suite/commit/19a380e3b59ce55a49a50ccc51f99175dc99cb77))
+
+
+### Bug Fixes
+
+* **host:** a command that isn't installed fails, it doesn't crash ([23bab8c](https://github.com/IamMrCupp/bench-suite/commit/23bab8cdd31e3657b92c0ee091609d04159c20a9))
+
+
+### Documentation
+
+* **readme:** real install lines for the apt repo ([e92b581](https://github.com/IamMrCupp/bench-suite/commit/e92b5814dbb72c2c41aebd0d35f90a6fa10c33c3))
+
 ## [1.2.0](https://github.com/IamMrCupp/bench-suite/compare/v1.1.0...v1.2.0) (2026-11-16)
 
 
