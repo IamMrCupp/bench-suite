@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.0](https://github.com/IamMrCupp/bench-suite/compare/v1.3.0...v1.4.0) (2026-11-17)
+
+
+### Features
+
+* **cameras:** guided /dev/cam-* names and the thermal autosuspend rule ([afe0995](https://github.com/IamMrCupp/bench-suite/commit/afe09952528ae86c1801e53617d3c7b0ed3e1cc2))
+* **obs:** say what to point OBS at, and run every step from plain bench-setup ([b608767](https://github.com/IamMrCupp/bench-suite/commit/b608767e4e50edd7d1b46e907e22299305f62d32))
+
 ## [1.3.0](https://github.com/IamMrCupp/bench-suite/compare/v1.2.0...v1.3.0) (2026-11-17)
 
 
