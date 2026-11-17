@@ -105,27 +105,11 @@ jobs:
       - name: Build bench-setup and bench-suite
         run: sh packaging/deb/build.sh
 
-      - name: Fetch the released benchhud, intake and parts packages
+      - name: Fetch the released benchhud, intake, parts and recon packages
         run: |
-          for repo in benchhud benchhud-intake bench-parts; do
+          for repo in benchhud benchhud-intake bench-parts bench-recon; do
             gh release download -R "IamMrCupp/$repo" -p '*amd64.deb' -D dist
           done
-
-      # bench-recon doesn't attach its .deb to releases yet (bench-recon#35).
-      # Until it does, build it from its latest release tag the way its own CI
-      # does: stage in ubuntu:26.04, pack on the runner.
-      - name: Fetch or build the bench-recon package
-        run: |
-          if gh release download -R IamMrCupp/bench-recon -p '*amd64.deb' -D dist; then exit 0; fi
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          export PATH="$HOME/.local/bin:$PATH"
-          tag=$(gh release view -R IamMrCupp/bench-recon --json tagName -q .tagName)
-          git clone -q --depth 1 --branch "$tag" https://github.com/IamMrCupp/bench-recon "$RUNNER_TEMP/recon"
-          cd "$RUNNER_TEMP/recon"
-          uv export --frozen --no-dev --no-hashes --no-emit-project -q > requirements.txt
-          docker run --rm -e DEB_ROOT=/src/build/debroot -e STAGE_ONLY=1 \
-            -v "$PWD":/src -w /src ubuntu:26.04 sh packaging/deb/build.sh
-          dpkg-deb --build --root-owner-group build/debroot "$GITHUB_WORKSPACE/dist/"
 
       - name: Make a local apt repo of the six packages
         run: |
