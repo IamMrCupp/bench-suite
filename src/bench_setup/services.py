@@ -292,6 +292,7 @@ class _MacApps:
     """
 
     ASK_TRIES = 6
+    OPEN_TIMEOUT = 60.0
     QUIT_TRIES = 20
     QUIT_WAIT = 0.5
 
@@ -382,8 +383,24 @@ class _MacApps:
                         f"the {app} app didn't quit, so it's still running with its old "
                         "settings. Quit it from the menu bar and run bench-setup again."
                     )
-        # -g: leave whatever the owner is doing in front.
-        code, _, err = self._as_user(["open", "-g", str(self._bundle(service))])
+        bundle = self._bundle(service)
+        assert bundle is not None
+        if host.quarantined(bundle):
+            # A freshly downloaded app: macOS asks before its first launch, and
+            # `open` doesn't come back until someone answers.
+            raise _Failed(
+                f"is set up, but macOS hasn't been told the {app} app is safe to open yet. "
+                f"Open it once from Applications, choose Open when macOS asks, then run "
+                "bench-setup again."
+            )
+        # -g: leave whatever the owner is doing in front. Timed, because `open`
+        # waits on any question macOS decides to ask first.
+        code, _, err = host.run(["open", "-g", str(bundle)], timeout=self.OPEN_TIMEOUT)
+        if code == 124:
+            raise _Failed(
+                f"macOS didn't finish opening the {app} app. If it's asking a question, "
+                "answer it, then run bench-setup again."
+            )
         if code != 0:
             raise _Failed(f"couldn't open the {app} app: {_detail(code, err)}")
 

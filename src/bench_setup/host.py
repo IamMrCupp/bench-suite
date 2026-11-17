@@ -173,6 +173,10 @@ class Host:
                 return str(bundle / "Contents" / "MacOS" / "benchhud")
         return None
 
+    def quarantined(self, path: Path) -> bool:
+        """macOS: a download that hasn't been opened yet, which Gatekeeper will ask about."""
+        return self.run(["xattr", "-p", "com.apple.quarantine", str(path)])[0] == 0
+
     def process_running(self, name: str) -> bool:
         return self.run(["pgrep", "-x", name])[0] == 0
 
@@ -183,7 +187,9 @@ class Host:
         except (FileNotFoundError, PermissionError):
             return {}
 
-    def run(self, cmd: Sequence[str], stdin: str | None = None) -> tuple[int, str, str]:
+    def run(
+        self, cmd: Sequence[str], stdin: str | None = None, timeout: float | None = None
+    ) -> tuple[int, str, str]:
         """Run ``cmd`` as root. Returns ``(exit code, stdout, stderr)``.
 
         Secrets go in on ``stdin`` and come back on stdout; never in ``cmd``,
@@ -191,8 +197,16 @@ class Host:
         """
         try:
             done = subprocess.run(
-                list(cmd), capture_output=True, text=True, check=False, **_stdin(stdin)
+                list(cmd),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=timeout,
+                **_stdin(stdin),
             )
+        except subprocess.TimeoutExpired:
+            # What `timeout` exits with. The command was killed.
+            return 124, "", f"{cmd[0]}: timed out after {timeout:g}s"
         except FileNotFoundError:
             # What a shell says for a command that isn't there. A minimal
             # install has no `ip`, and a check that can't run isn't a crash.

@@ -197,3 +197,9 @@ def test_a_prompt_with_no_one_at_the_keyboard_is_a_no(monkeypatch, capsys) -> No
     assert ui.ask_yes_no("Load the module now?") is False
     assert ui.ask_choice("Which one is the scope camera?", 3) is None
     capsys.readouterr()
+
+
+def test_a_command_that_outlives_its_timeout_is_stopped_and_reported() -> None:
+    code, _, err = Host().run(["sleep", "5"], timeout=0.2)
+    assert code == 124
+    assert "timed out" in err
