@@ -8,6 +8,8 @@ name: apt repo
 # - a bench-suite release, the daily schedule, or a run by hand: the same
 #   build and install with the real key, then upload. The schedule is what
 #   picks up new releases of the other bench repos.
+# - every run ends by installing from https://apt.yolorepair.com itself, the
+#   way the README says to. On a pull request that checks what's already live.
 
 on:
   pull_request:
@@ -178,3 +180,26 @@ jobs:
         run: |
           curl -fsS https://apt.yolorepair.com/dists/stable/InRelease | head -5
           curl -fsSI https://apt.yolorepair.com/bench-archive-keyring.gpg | head -1
+
+  # The real thing: the README's install lines against the live repo.
+  live:
+    needs: publish
+    if: ${{ !cancelled() && (needs.publish.result == 'success' || github.event_name == 'pull_request') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: apt install bench-suite from apt.yolorepair.com on clean ubuntu:26.04
+        run: |
+          docker run --rm ubuntu:26.04 sh -ec '
+            apt-get update -qq
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates curl >/dev/null
+            curl -fsSLo /usr/share/keyrings/bench-archive-keyring.gpg https://apt.yolorepair.com/bench-archive-keyring.gpg
+            echo "deb [signed-by=/usr/share/keyrings/bench-archive-keyring.gpg] https://apt.yolorepair.com stable main" \
+              > /etc/apt/sources.list.d/bench.list
+            apt-get update -qq
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq bench-suite >/dev/null
+            for pkg in bench-suite bench-setup benchhud benchhud-intake bench-parts; do
+              dpkg-query -W -f "\${Package} \${Version} \${db:Status-Abbrev}\n" "$pkg"
+            done
+            apt-cache policy bench-suite | grep -F apt.yolorepair.com
+            bench-setup --version
+          '
