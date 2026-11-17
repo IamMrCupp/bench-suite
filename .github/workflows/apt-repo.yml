@@ -168,10 +168,13 @@ jobs:
           aws s3 sync repo/pool "s3://$R2_BUCKET/pool" --endpoint-url "$R2_ENDPOINT" \
             --cache-control "public, max-age=31536000, immutable" --size-only --no-progress
 
+      # no-store on the index: the edge caches Packages.gz by its extension
+      # but never InRelease, so with any max-age a client can get a new signed
+      # list of hashes and a five-minute-old file that doesn't match it.
       - name: Upload the index and the key
         run: |
           aws s3 sync repo/dists "s3://$R2_BUCKET/dists" --endpoint-url "$R2_ENDPOINT" \
-            --cache-control "public, max-age=300" --delete --no-progress
+            --cache-control "no-store" --delete --no-progress
           aws s3 cp repo/bench-archive-keyring.gpg "s3://$R2_BUCKET/bench-archive-keyring.gpg" \
             --endpoint-url "$R2_ENDPOINT" --cache-control "public, max-age=3600" \
             --content-type application/octet-stream --no-progress
@@ -187,6 +190,10 @@ jobs:
         run: |
           curl -fsS https://apt.yolorepair.com/dists/stable/InRelease | head -5
           curl -fsSI https://apt.yolorepair.com/bench-archive-keyring.gpg | head -1
+          # The index comes from the bucket, not from an edge copy.
+          curl -fsSI https://apt.yolorepair.com/dists/stable/main/binary-amd64/Packages.gz \
+            | tee /dev/stderr | grep -qiE '^cf-cache-status: *(HIT|STALE|UPDATING|REVALIDATED)' \
+            && echo "::warning::the edge answered the index from its cache" || true
 
   # The real thing: the README's install lines against the live repo.
   live:
