@@ -92,7 +92,9 @@ class _Cameras:
         roles = self._roles()
         ui.say("Cameras plugged in:")
         for number, link in enumerate(cameras, 1):
-            label = host.camera_label(link) or Path(link).name
+            # uvcvideo names a camera "<product>: <interface>", which on the
+            # bench repeats itself ("Cam Link 4K: Cam Link 4K"): keep the product.
+            label = (host.camera_label(link) or Path(link).name).split(": ", 1)[0]
             role = next((r for r in ROLES if host.same_device(roles[r], link)), None)
             ui.say(f"  {number}. {label}" + (f"  (benchhud's {role})" if role else ""))
         self._pick_roles(cameras, roles)
@@ -145,13 +147,18 @@ class _Cameras:
 
     # -- the rules --------------------------------------------------------
 
-    def _install(self, path: Path, wanted: str, question: str) -> bool:
-        """Write ``wanted`` to ``path`` unless it already says the same. True if written."""
+    def _install(self, path: Path, wanted: str, question: str, why: str = "") -> bool:
+        """Write ``wanted`` to ``path`` unless it already says the same. True if written.
+
+        ``why`` is said only when there's something to decide.
+        """
         host, ui = self.host, self.ui
         current = host.read_text(path)
         if current is not None and _rules_only(current) == _rules_only(wanted):
             ui.say(f"{path}: already in place")
             return False
+        if why:
+            ui.say(why)
         ui.say(f"  would {'replace' if current is not None else 'write'} {path}:")
         for line in wanted.splitlines():
             ui.say(f"    {line}")
@@ -182,12 +189,14 @@ class _Cameras:
                 "Is it plugged in?"
             )
             return False
-        self.ui.say(
-            "thermal camera: Linux suspends idle USB devices, and some thermal cameras "
-            "don't wake cleanly: they reset and drop off the bus."
-        )
         return self._install(
-            THERMAL_RULE, marked(thermal_rule(*ids)), "Keep the thermal camera awake?"
+            THERMAL_RULE,
+            marked(thermal_rule(*ids)),
+            "Keep the thermal camera awake?",
+            why=(
+                "thermal camera: Linux suspends idle USB devices, and some thermal cameras "
+                "don't wake cleanly: they reset and drop off the bus."
+            ),
         )
 
     # -- what to do with them ---------------------------------------------

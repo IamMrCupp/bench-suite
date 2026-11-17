@@ -21,7 +21,11 @@ from test_services import FakeUI
 SCOPE = "/dev/v4l/by-id/usb-HY_Microscope_0001-video-index0"
 THERMAL = "/dev/v4l/by-id/usb-Sipeed_Ltd._Thermal_Camera__UVC__0123-video-index0"
 WEBCAM = "/dev/v4l/by-id/usb-046d_C922_Pro_Stream_Webcam_ABCD-video-index0"
-LABELS = {SCOPE: "HY Microscope", THERMAL: "Thermal Camera (UVC)", WEBCAM: "C922 Pro Stream Webcam"}
+LABELS = {
+    SCOPE: "HY Microscope: HY Microscope",
+    THERMAL: "Thermal Camera (UVC): UVC Camer",
+    WEBCAM: "C922 Pro Stream Webcam",
+}
 NAMES = {SCOPE: "scope", THERMAL: "thermal", WEBCAM: "c922-pro-stream-webcam"}
 
 
@@ -164,6 +168,7 @@ def test_a_second_run_changes_nothing() -> None:
     assert not host.written and not host.ran("udevadm")
     assert f"{CAMERA_RULES}: already in place" in ui.out
     assert f"{THERMAL_RULE}: already in place" in ui.out
+    assert not any("suspends idle USB devices" in line for line in ui.out), "nothing to explain"
 
 
 def test_rules_installed_by_hand_from_the_guide_count_as_in_place() -> None:
