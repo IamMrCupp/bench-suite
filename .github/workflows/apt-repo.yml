@@ -155,18 +155,34 @@ jobs:
           name: apt-repo
           path: repo
 
+      - uses: actions/checkout@v5
+        with:
+          path: src
+          sparse-checkout: packaging/apt
+
       # Packages first, the index last: a client never sees an index that
-      # names a file that isn't there yet. A .deb's name carries its version,
-      # so it never changes and can be cached for good; the index is small and
-      # must be fresh.
-      #
-      # --size-only: the packages are downloaded fresh each run, so their
-      # timestamps are always new and a plain sync would upload every one of
-      # them every time. Same name and same size is the same package.
+      # names a file that isn't there yet. A package is uploaded when the
+      # index that's live now doesn't list its path with the same SHA256: a
+      # .deb's name carries its version, but a release can be rebuilt under
+      # the same name, so name and size aren't enough. The live index is read
+      # from the bucket, not through the edge.
       - name: Upload the packages
         run: |
-          aws s3 sync repo/pool "s3://$R2_BUCKET/pool" --endpoint-url "$R2_ENDPOINT" \
-            --cache-control "public, max-age=31536000, immutable" --size-only --no-progress
+          mkdir published
+          for arch in amd64 arm64; do
+            aws s3 cp "s3://$R2_BUCKET/dists/stable/main/binary-$arch/Packages" "published/Packages-$arch" \
+              --endpoint-url "$R2_ENDPOINT" --no-progress \
+              || echo "No published index for $arch: every package for it goes up."
+          done
+          python3 src/packaging/apt/pool-changes.py repo published > changes.tsv
+          echo "$(wc -l < changes.tsv) package(s) to upload"
+          while IFS="$(printf '\t')" read -r kind path; do
+            aws s3 cp "repo/$path" "s3://$R2_BUCKET/$path" --endpoint-url "$R2_ENDPOINT" \
+              --cache-control "public, max-age=31536000, immutable" --no-progress
+            if [ "$kind" = replaced ]; then
+              echo "::warning::$path was rebuilt under the same name. The bucket has the new file; the edge may serve the old one until its cache is purged."
+            fi
+          done < changes.tsv
 
       # no-store on the index: the edge caches Packages.gz by its extension
       # but never InRelease, so with any max-age a client can get a new signed
