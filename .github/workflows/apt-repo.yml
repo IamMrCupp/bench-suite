@@ -109,7 +109,7 @@ jobs:
               > /etc/apt/sources.list.d/bench.list
             apt-get update -qq
             DEBIAN_FRONTEND=noninteractive apt-get install -y -qq bench-suite >/dev/null
-            for pkg in bench-suite bench-setup benchhud benchhud-intake bench-parts; do
+            for pkg in bench-suite bench-setup benchhud benchhud-intake bench-parts bench-recon; do
               dpkg-query -W -f "\${Package} \${Version} \${db:Status-Abbrev}\n" "$pkg"
             done
             bench-setup --version
@@ -197,7 +197,7 @@ jobs:
               > /etc/apt/sources.list.d/bench.list
             apt-get update -qq
             DEBIAN_FRONTEND=noninteractive apt-get install -y -qq bench-suite >/dev/null
-            for pkg in bench-suite bench-setup benchhud benchhud-intake bench-parts; do
+            for pkg in bench-suite bench-setup benchhud benchhud-intake bench-parts bench-recon; do
               dpkg-query -W -f "\${Package} \${Version} \${db:Status-Abbrev}\n" "$pkg"
             done
             apt-cache policy bench-suite | grep -F apt.yolorepair.com

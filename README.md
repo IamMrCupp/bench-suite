@@ -2,7 +2,7 @@
 
 One install for the repair bench. **bench-suite** sets up the four bench apps on one machine and wires them to each other, so a fresh box goes from nothing to a working bench without hand-copying URLs and tokens between configs.
 
-> **Status: installable on Ubuntu 26.04, amd64.** The signed apt repo is live at `apt.yolorepair.com`, and CI installs from it on a clean machine. bench-recon isn't in the repo yet ([bench-recon#35](https://github.com/IamMrCupp/bench-recon/issues/35)), so for now you get benchhud, intake and parts. macOS and the host setup (cameras, OBS) are still to come.
+> **Status: installable on Ubuntu 26.04, amd64.** The signed apt repo is live at `apt.yolorepair.com`, and CI installs from it on a clean machine. macOS and the host setup (cameras, OBS) are still to come.
 
 ## What it puts together
 
