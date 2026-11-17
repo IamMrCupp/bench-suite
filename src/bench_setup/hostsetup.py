@@ -380,6 +380,13 @@ class _Steps:
             whose = "" if self._ours(UHUBCTL_SUDOERS) else " (not written by bench-setup)"
             ui.say(f"uhubctl: {UHUBCTL_SUDOERS} is already there{whose}")
             return
+        # Set up by hand under another name: the document's line, in any file.
+        for name in host.glob("/etc/sudoers.d/*"):
+            text = host.read_text(Path(name)) or ""
+            live = [ln for ln in text.splitlines() if not ln.lstrip().startswith("#")]
+            if any("NOPASSWD" in ln and "uhubctl" in ln for ln in live):
+                ui.say(f"uhubctl: {name} already lets an account run it without a password")
+                return
         if not _PLAIN_USER.fullmatch(user):
             ui.say(f"uhubctl: {user!r} isn't a name bench-setup will put in a sudoers file")
             return

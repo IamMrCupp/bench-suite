@@ -566,3 +566,17 @@ def test_undo_removes_the_sudoers_file_it_wrote() -> None:
     assert code == EXIT_OK
     assert SUDOERS in host.removed
     assert "Groups an account was added to are kept" in ui.text
+
+
+def test_uhubctl_already_allowed_under_another_file_name_is_left_alone() -> None:
+    # The real bench: the line was written by hand into /etc/sudoers.d/benchhud.
+    host = uhub_host()
+    host.files["/etc/sudoers.d/benchhud"] = (
+        "# benchhud\niammrcupp ALL=(root) NOPASSWD: /usr/sbin/uhubctl\n"
+    )
+    host.files["/etc/sudoers.d/README"] = "# NOPASSWD lines for uhubctl go here\n"
+    code, ui = host_run(host, yes=True, interactive=False)
+
+    assert code == EXIT_OK
+    assert SUDOERS not in host.files and not host.ran("visudo")
+    assert any("/etc/sudoers.d/benchhud already lets" in line for line in ui.out)
