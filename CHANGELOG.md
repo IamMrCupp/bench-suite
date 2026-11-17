@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.7](https://github.com/IamMrCupp/bench-suite/compare/v1.5.6...v1.5.7) (2026-11-17)
+
+
+### Bug Fixes
+
+* **apt:** upload packages by checksum, not by size ([#51](https://github.com/IamMrCupp/bench-suite/issues/51)) ([5ff5dc2](https://github.com/IamMrCupp/bench-suite/commit/5ff5dc29e584574ffac63e09dea5b0b8ec75af8d))
+
 ## [1.5.6](https://github.com/IamMrCupp/bench-suite/compare/v1.5.5...v1.5.6) (2026-11-17)
 
 
