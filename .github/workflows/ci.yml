@@ -262,12 +262,12 @@ jobs:
       # at the keyboard: every question is a no, nothing changes, doctor passes.
       - name: sudo bench-setup walks every step and changes nothing here
         run: |
-          before=$(docker exec sd sh -c 'sha256sum /var/lib/*/settings.env; ls /etc/modprobe.d /etc/modules-load.d /etc/sysctl.d /etc/udev/rules.d')
+          before=$(docker exec sd sh -c 'sha256sum /var/lib/*/settings.env; find /etc/modprobe.d /etc/modules-load.d /etc/sysctl.d /etc/udev/rules.d 2>/dev/null | sort; true')
           docker exec -u bench -e HOME=/home/bench sd sudo bench-setup < /dev/null | tee "$RUNNER_TEMP/guided.txt"
           for title in Services Host Cameras OBS Check; do grep -qx "== $title ==" "$RUNNER_TEMP/guided.txt"; done
           test "$(grep -c 'already set up' "$RUNNER_TEMP/guided.txt")" = 3
           ! grep -q FAIL "$RUNNER_TEMP/guided.txt"
-          after=$(docker exec sd sh -c 'sha256sum /var/lib/*/settings.env; ls /etc/modprobe.d /etc/modules-load.d /etc/sysctl.d /etc/udev/rules.d')
+          after=$(docker exec sd sh -c 'sha256sum /var/lib/*/settings.env; find /etc/modprobe.d /etc/modules-load.d /etc/sysctl.d /etc/udev/rules.d 2>/dev/null | sort; true')
           test "$before" = "$after"
 
       - name: doctor notices a service that stopped answering
