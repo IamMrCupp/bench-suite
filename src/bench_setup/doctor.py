@@ -22,12 +22,12 @@ from bench_setup.services import EXIT_FAILED, EXIT_OK, SERVICES, UI, Service, Te
 OK, OFF, WARN, FAIL = "ok", "off", "warn", "FAIL"
 
 _LISTEN = "0A"
-_NODROP = Path("/sys/module/uvcvideo/parameters/nodrop")
-_LOOPBACK_MODULE = Path("/sys/module/v4l2loopback")
+NODROP = Path("/sys/module/uvcvideo/parameters/nodrop")
+LOOPBACK_MODULE = Path("/sys/module/v4l2loopback")
 _THERMAL_CAM = Path("/dev/cam-thermal")
 _THERMAL_RULE = Path("/etc/udev/rules.d/60-benchhud-thermal.rules")
-_ARP = Path("/proc/sys/net/ipv4/conf/all")
-_DEFAULT_OUTPUT = "/dev/video10"
+ARP = Path("/proc/sys/net/ipv4/conf/all")
+DEFAULT_OUTPUT = "/dev/video10"
 
 
 @dataclass(frozen=True)
@@ -70,6 +70,55 @@ def _beyond_loopback(addresses: list[str]) -> list[str]:
     return sorted({a for a in addresses if not ipaddress.ip_address(a).is_loopback})
 
 
+def benchhud_config(host: Host, user: str | None) -> dict[str, Any] | None:
+    """``user``'s benchhud config, or None when there's no benchhud (or no one to ask as)."""
+    if not host.installed("benchhud") or user is None or not host.user_exists(user):
+        return None
+    code, out, _ = host.run_as_user(user, ["benchhud", "config", "path"])
+    if code != 0 or not out.strip():
+        return None
+    return host.read_toml(Path(out.strip()))
+
+
+def output_nodes(config: dict[str, Any]) -> list[str]:
+    """The loopback nodes benchhud's ``[output]`` writes to."""
+    output = config.get("output")
+    output = output if isinstance(output, dict) else {}
+    nodes = [output.get("device") or DEFAULT_OUTPUT]
+    return nodes + [output[k] for k in ("scope_device", "thermal_device") if output.get(k)]
+
+
+def shared_subnets(host: Host) -> dict[str, list[str]]:
+    """Subnets with more than one interface up on them: ``{network: [interfaces]}``."""
+    code, out, _ = host.run(["ip", "-j", "-4", "addr", "show", "up"])
+    if code != 0:
+        return {}
+    try:
+        links = json.loads(out)
+    except ValueError:
+        return {}
+    nets: dict[str, set[str]] = {}
+    for link in links if isinstance(links, list) else []:
+        name = link.get("ifname", "")
+        for info in link.get("addr_info", []):
+            try:
+                iface = ipaddress.ip_interface(f"{info['local']}/{info['prefixlen']}")
+            except (KeyError, ValueError):
+                continue
+            if iface.is_loopback or iface.is_link_local:
+                continue
+            nets.setdefault(str(iface.network), set()).add(name)
+    return {net: sorted(names) for net, names in sorted(nets.items()) if len(names) > 1}
+
+
+def arp_settings(host: Host) -> tuple[str, str]:
+    """The live ``arp_ignore`` and ``arp_announce`` (want "1" and "2")."""
+    return (
+        (host.read_text(ARP / "arp_ignore") or "").strip(),
+        (host.read_text(ARP / "arp_announce") or "").strip(),
+    )
+
+
 class _Doctor:
     def __init__(self, host: Host, options: Options) -> None:
         self.host = host
@@ -82,15 +131,7 @@ class _Doctor:
     def config(self) -> dict[str, Any] | None:
         """benchhud's config, or None when there's no benchhud (or no one to ask as)."""
         if self._config is None:
-            host = self.host
-            if not host.installed("benchhud") or self.user is None:
-                return None
-            if not host.user_exists(self.user):
-                return None
-            code, out, _ = host.run_as_user(self.user, ["benchhud", "config", "path"])
-            if code != 0 or not out.strip():
-                return None
-            self._config = host.read_toml(Path(out.strip()))
+            self._config = benchhud_config(self.host, self.user)
         return self._config
 
     # -- services ---------------------------------------------------------
@@ -214,15 +255,15 @@ class _Doctor:
         if output.get("enabled") is False:
             report.add(OFF, "virtual camera: benchhud's output is off")
             return
-        nodes = [output.get("device") or _DEFAULT_OUTPUT]
-        nodes += [output[k] for k in ("scope_device", "thermal_device") if output.get(k)]
+        nodes = output_nodes(config)
         missing = [node for node in nodes if not self.host.exists(Path(node))]
         if not missing:
             report.add(OK, f"virtual camera: {', '.join(nodes)}")
-        elif not self.host.exists(_LOOPBACK_MODULE):
+        elif not self.host.exists(LOOPBACK_MODULE):
             report.add(
                 WARN,
-                f"virtual camera: {', '.join(missing)} missing, and v4l2loopback isn't loaded",
+                f"virtual camera: {', '.join(missing)} missing, and v4l2loopback isn't loaded. "
+                "Fix: sudo bench-setup host",
             )
         else:
             report.add(
@@ -232,7 +273,7 @@ class _Doctor:
             )
 
     def nodrop(self, report: Report) -> None:
-        value = self.host.read_text(_NODROP)
+        value = self.host.read_text(NODROP)
         if value is None:
             return  # uvcvideo isn't loaded: no UVC camera has been plugged in
         if value.strip() == "0":
@@ -241,14 +282,14 @@ class _Doctor:
             report.add(
                 WARN,
                 f"uvcvideo: passes torn frames on (nodrop={value.strip()}), so the thermal image "
-                "can tear. Fix: echo 0 | sudo tee /sys/module/uvcvideo/parameters/nodrop",
+                "can tear. Fix: sudo bench-setup host",
             )
 
     def cameras(self, report: Report) -> None:
         names = self.host.glob("/dev/cam-*")
         if names:
             report.add(OK, f"camera names: {', '.join(names)}")
-        elif self.host.read_text(_NODROP) is not None:
+        elif self.host.read_text(NODROP) is not None:
             report.add(
                 WARN,
                 "camera names: no /dev/cam-* names, so an OBS source can end up on the wrong "
@@ -262,31 +303,12 @@ class _Doctor:
             )
 
     def network(self, report: Report) -> None:
-        code, out, _ = self.host.run(["ip", "-j", "-4", "addr", "show", "up"])
-        if code != 0:
-            return
-        try:
-            links = json.loads(out)
-        except ValueError:
-            return
-        nets: dict[str, set[str]] = {}
-        for link in links if isinstance(links, list) else []:
-            name = link.get("ifname", "")
-            for info in link.get("addr_info", []):
-                try:
-                    iface = ipaddress.ip_interface(f"{info['local']}/{info['prefixlen']}")
-                except (KeyError, ValueError):
-                    continue
-                if iface.is_loopback or iface.is_link_local:
-                    continue
-                nets.setdefault(str(iface.network), set()).add(name)
-        shared = {net: names for net, names in nets.items() if len(names) > 1}
+        shared = shared_subnets(self.host)
         if not shared:
             return
-        ignore = (self.host.read_text(_ARP / "arp_ignore") or "").strip()
-        announce = (self.host.read_text(_ARP / "arp_announce") or "").strip()
-        for net, names in sorted(shared.items()):
-            cards = " and ".join(sorted(names))
+        ignore, announce = arp_settings(self.host)
+        for net, names in shared.items():
+            cards = " and ".join(names)
             if ignore == "1" and announce == "2":
                 report.add(OK, f"network: {cards} share {net}, with the ARP settings in place")
             else:
@@ -294,7 +316,7 @@ class _Doctor:
                     WARN,
                     f"network: {cards} are both on {net} with arp_ignore={ignore or '?'}, "
                     f"arp_announce={announce or '?'}; the box can boot with no IPv4 routes. "
-                    "Want 1 and 2 (BENCH-SETUP.md, 'Wired and Wi-Fi on one subnet')",
+                    "Fix: sudo bench-setup host",
                 )
 
 

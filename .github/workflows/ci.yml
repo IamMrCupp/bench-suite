@@ -218,6 +218,21 @@ jobs:
             ! grep -qF "$token" "$RUNNER_TEMP/doctor.txt" "$RUNNER_TEMP/doctor-user.txt"
           done
 
+      # The container has no cameras, one network card and no v4l2loopback, so
+      # only the report-only path is real here: it must change nothing.
+      - name: bench-setup host without --yes only reports
+        run: |
+          before=$(docker exec sd sh -c 'ls /etc/modprobe.d /etc/modules-load.d /etc/sysctl.d | sort')
+          docker exec -u bench -e HOME=/home/bench sd sudo bench-setup host --non-interactive < /dev/null | tee "$RUNNER_TEMP/host.txt"
+          grep -q "only reports" "$RUNNER_TEMP/host.txt"
+          grep -q "would write /etc/modprobe.d/benchhud-loopback.conf" "$RUNNER_TEMP/host.txt"
+          after=$(docker exec sd sh -c 'ls /etc/modprobe.d /etc/modules-load.d /etc/sysctl.d | sort')
+          test "$before" = "$after"
+          docker exec -u bench -e HOME=/home/bench sd sudo bench-setup host --undo --non-interactive < /dev/null | grep -q "Nothing to undo"
+          code=0
+          docker exec -u bench sd bench-setup host --non-interactive < /dev/null || code=$?
+          test "$code" = 2
+
       - name: doctor notices a service that stopped answering
         run: |
           docker exec sd systemctl stop bench-parts

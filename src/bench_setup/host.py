@@ -79,6 +79,25 @@ class Host:
     def glob(self, pattern: str) -> list[str]:
         return sorted(_glob.glob(pattern))
 
+    def write_file(self, path: Path, text: str) -> None:
+        """Write a root-owned, world-readable config file, whole or not at all."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f".{path.name}.bench-setup")
+        tmp.write_text(text, "utf-8")
+        tmp.chmod(0o644)
+        tmp.replace(path)
+
+    def write_value(self, path: Path, value: str) -> bool:
+        """Set a /sys or /proc value. False if the kernel refused it."""
+        try:
+            path.write_text(value, "utf-8")
+        except OSError:
+            return False
+        return True
+
+    def remove(self, path: Path) -> None:
+        path.unlink(missing_ok=True)
+
     def user_exists(self, user: str) -> bool:
         try:
             pwd.getpwnam(user)

@@ -55,6 +55,22 @@ sudo bench-setup doctor
 
 `doctor` looks and reports; it changes nothing. For each service: is it on, does it answer as itself, does it listen only on this machine, are the password and token set, and does benchhud hold the matching token. For the host: the things benchhud's [BENCH-SETUP.md](https://github.com/IamMrCupp/benchhud/blob/main/docs/BENCH-SETUP.md) has you set up by hand — the virtual camera nodes, `uvcvideo`'s `nodrop`, the `/dev/cam-*` names, two network cards on one subnet. It never prints a secret, only "set" or not. Without `sudo` it still runs, and says what it couldn't check. It exits 1 if something is broken, so a script can lean on it. It checks the installed packages, not the containers.
 
+### The host steps
+
+```sh
+sudo bench-setup host
+```
+
+Three things benchhud's [BENCH-SETUP.md](https://github.com/IamMrCupp/benchhud/blob/main/docs/BENCH-SETUP.md) has you do by hand, as prompts:
+
+- **The virtual camera.** The `v4l2loopback` node benchhud sends its picture to OBS through: the options file, load-at-boot, and the initramfs rebuild that makes the options stick. One node, two (if you also use OBS's own virtual camera) or four (separate scope and thermal feeds). Loading the module is its own question — say no and it waits for the next reboot. With Secure Boot on, it tells you about the MOK screen you'll meet; it can't do that part for you.
+- **Torn frames.** `uvcvideo nodrop=0`, so a thermal frame that lost data on USB is dropped instead of shown torn.
+- **Two network cards on one subnet.** The ARP settings that stop a wired-plus-Wi-Fi bench booting with no IPv4 routes. Only offered when that's the bench you have.
+
+Each step looks first, shows you the file it would write, and asks. A step that doesn't apply says nothing; one that's already done says so. If you've already set something up by hand, your file is left alone.
+
+`sudo bench-setup host --undo` removes the files `bench-setup` wrote — they carry a marker line — and nothing else. From a script, `--non-interactive --yes` answers yes throughout, and without `--yes` it only reports.
+
 ### In containers instead
 
 If you'd rather not install the service packages, the three services run from the [`compose.yaml`](compose.yaml) in this repo, and `bench-setup` does the same job through `docker compose`:

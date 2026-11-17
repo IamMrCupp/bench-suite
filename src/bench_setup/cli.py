@@ -9,8 +9,9 @@ else is installed, and ships in a ``.deb`` that depends on the system
     printf '%s\\n' "$PW" | sudo bench-setup services --non-interactive
     bench-setup services --compose               # the same, for the containers
     bench-setup doctor                           # look, report, change nothing
+    sudo bench-setup host                        # virtual camera, torn frames, two cards
 
-The other subcommands (host, cameras) land in their own changes.
+The other subcommand (cameras) lands in its own change.
 """
 
 from __future__ import annotations
@@ -92,6 +93,39 @@ def build_parser() -> argparse.ArgumentParser:
         "--user",
         help="whose benchhud to look at (default: the account that ran it)",
     )
+
+    host = sub.add_parser(
+        "host",
+        help="set up the virtual camera node and the kernel settings the bench needs",
+        description=(
+            "Walk through the host steps from benchhud's BENCH-SETUP.md: the v4l2loopback "
+            "node benchhud sends its picture to OBS through, uvcvideo dropping torn frames, "
+            "and the ARP settings for a bench with two network cards on one subnet. Each step "
+            "shows the file it would write and asks first. Steps that don't apply are skipped, "
+            "and it's safe to run again."
+        ),
+    )
+    host.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="never prompt; without --yes this only reports what it would do",
+    )
+    host.add_argument("--yes", action="store_true", help="answer yes to every question")
+    host.add_argument(
+        "--nodes",
+        type=int,
+        choices=[1, 2, 4],
+        help=(
+            "virtual camera nodes: 1 (benchhud), 2 (plus OBS's own virtual camera) or "
+            "4 (plus separate scope and thermal feeds)"
+        ),
+    )
+    host.add_argument(
+        "--undo",
+        action="store_true",
+        help="remove the files bench-setup host wrote, and only those",
+    )
+    host.add_argument("--user", help="whose benchhud to read (default: the account that ran sudo)")
     return parser
 
 
@@ -119,6 +153,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         from bench_setup import doctor
 
         return doctor.run(doctor.Options(user=args.user))
+    if args.command == "host":
+        from bench_setup import hostsetup
+
+        return hostsetup.run(
+            hostsetup.Options(
+                interactive=not args.non_interactive,
+                yes=args.yes,
+                undo=args.undo,
+                nodes=args.nodes,
+                user=args.user,
+            )
+        )
     # The full guided run isn't here yet: say so plainly instead of pretending.
     print("bench-setup: nothing to do yet. Try: sudo bench-setup services")
     return 0
