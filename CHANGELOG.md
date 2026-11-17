@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.1](https://github.com/IamMrCupp/bench-suite/compare/v1.5.0...v1.5.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **macos:** stop a running app that declines to quit when asked ([c05d5a4](https://github.com/IamMrCupp/bench-suite/commit/c05d5a463e2faca5b1aeb4380309137b20c5384a))
+
 ## [1.5.0](https://github.com/IamMrCupp/bench-suite/compare/v1.4.1...v1.5.0) (2026-11-17)
 
 
