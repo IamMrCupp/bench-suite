@@ -6,6 +6,7 @@ against a fake without touching systemd, the network or anyone's config.
 
 from __future__ import annotations
 
+import glob as _glob
 import json
 import os
 import pwd
@@ -65,6 +66,19 @@ class Host:
     def is_file(self, path: Path) -> bool:
         return path.is_file()
 
+    def exists(self, path: Path) -> bool:
+        return path.exists()
+
+    def read_text(self, path: Path) -> str | None:
+        """A small file's text (a /proc or /sys value), or None if it can't be read."""
+        try:
+            return path.read_text("utf-8")
+        except OSError:
+            return None
+
+    def glob(self, pattern: str) -> list[str]:
+        return sorted(_glob.glob(pattern))
+
     def user_exists(self, user: str) -> bool:
         try:
             pwd.getpwnam(user)
@@ -88,9 +102,14 @@ class Host:
         Secrets go in on ``stdin`` and come back on stdout; never in ``cmd``,
         which anyone can read in ``ps``.
         """
-        done = subprocess.run(
-            list(cmd), capture_output=True, text=True, check=False, **_stdin(stdin)
-        )
+        try:
+            done = subprocess.run(
+                list(cmd), capture_output=True, text=True, check=False, **_stdin(stdin)
+            )
+        except FileNotFoundError:
+            # What a shell says for a command that isn't there. A minimal
+            # install has no `ip`, and a check that can't run isn't a crash.
+            return 127, "", f"{cmd[0]}: command not found"
         return done.returncode, done.stdout, done.stderr
 
     def run_as_user(

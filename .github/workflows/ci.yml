@@ -201,6 +201,32 @@ jobs:
             ! grep -qE ":20D3 .* 0A " /proc/net/tcp6
           '
 
+      # doctor on the bench this job just built: everything on, nothing wrong
+      # with the services, and no token in what it prints.
+      - name: bench-setup doctor finds nothing wrong, with and without sudo
+        run: |
+          docker exec -u bench -e HOME=/home/bench sd sudo bench-setup doctor | tee "$RUNNER_TEMP/doctor.txt"
+          for name in benchhud-intake bench-parts bench-recon; do
+            grep -E "^  ok +$name: answering on 127\.0\.0\.1:840[123], password set, token set, benchhud wired$" "$RUNNER_TEMP/doctor.txt"
+          done
+          ! grep -q FAIL "$RUNNER_TEMP/doctor.txt"
+          docker exec -u bench -e HOME=/home/bench sd bench-setup doctor | tee "$RUNNER_TEMP/doctor-user.txt"
+          grep -q "password and token not checked (needs sudo)" "$RUNNER_TEMP/doctor-user.txt"
+          for name in benchhud-intake bench-parts bench-recon; do
+            token=$(docker exec sd sh -c "sed -n 's/^[A-Z_]*_API_TOKEN=//p' /var/lib/$name/settings.env")
+            test -n "$token"
+            ! grep -qF "$token" "$RUNNER_TEMP/doctor.txt" "$RUNNER_TEMP/doctor-user.txt"
+          done
+
+      - name: doctor notices a service that stopped answering
+        run: |
+          docker exec sd systemctl stop bench-parts
+          code=0
+          docker exec -u bench -e HOME=/home/bench sd sudo bench-setup doctor > "$RUNNER_TEMP/doctor-down.txt" || code=$?
+          cat "$RUNNER_TEMP/doctor-down.txt"
+          test "$code" = 1
+          grep -q "FAIL  bench-parts: nothing answers on 127.0.0.1:8402" "$RUNNER_TEMP/doctor-down.txt"
+
       - name: Service logs
         if: failure()
         run: |

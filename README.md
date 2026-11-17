@@ -47,6 +47,14 @@ printf '%s\n' "$BENCH_PASSWORD" | sudo bench-setup services --non-interactive
 
 bench-recon stays off there too unless you pass `--recon`. Quit benchhud before running it: benchhud saves its config on the way out and would write its old copy over the new one, so `bench-setup` refuses to wire it while it's open.
 
+### Checking on it
+
+```sh
+sudo bench-setup doctor
+```
+
+`doctor` looks and reports; it changes nothing. For each service: is it on, does it answer as itself, does it listen only on this machine, are the password and token set, and does benchhud hold the matching token. For the host: the things benchhud's [BENCH-SETUP.md](https://github.com/IamMrCupp/benchhud/blob/main/docs/BENCH-SETUP.md) has you set up by hand — the virtual camera nodes, `uvcvideo`'s `nodrop`, the `/dev/cam-*` names, two network cards on one subnet. It never prints a secret, only "set" or not. Without `sudo` it still runs, and says what it couldn't check. It exits 1 if something is broken, so a script can lean on it. It checks the installed packages, not the containers.
+
 ### In containers instead
 
 If you'd rather not install the service packages, the three services run from the [`compose.yaml`](compose.yaml) in this repo, and `bench-setup` does the same job through `docker compose`:

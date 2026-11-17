@@ -8,8 +8,9 @@ else is installed, and ships in a ``.deb`` that depends on the system
     sudo bench-setup services --recon            # ...and turn bench-recon on
     printf '%s\\n' "$PW" | sudo bench-setup services --non-interactive
     bench-setup services --compose               # the same, for the containers
+    bench-setup doctor                           # look, report, change nothing
 
-The other subcommands (host, cameras, doctor) land in their own changes.
+The other subcommands (host, cameras) land in their own changes.
 """
 
 from __future__ import annotations
@@ -76,6 +77,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--user",
         help="whose benchhud to wire (default: the account that ran sudo)",
     )
+
+    doctor = sub.add_parser(
+        "doctor",
+        help="check the services and the host, and change nothing",
+        description=(
+            "Check that the bench services are on, answering, listening only on this machine "
+            "and wired into benchhud, and that the host is set up the way benchhud's "
+            "BENCH-SETUP.md describes. Changes nothing. With sudo it can also check the "
+            "passwords and tokens (it never prints them). Exits 1 if something is broken."
+        ),
+    )
+    doctor.add_argument(
+        "--user",
+        help="whose benchhud to look at (default: the account that ran it)",
+    )
     return parser
 
 
@@ -99,6 +115,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 compose=compose,
             )
         )
+    if args.command == "doctor":
+        from bench_setup import doctor
+
+        return doctor.run(doctor.Options(user=args.user))
     # The full guided run isn't here yet: say so plainly instead of pretending.
     print("bench-setup: nothing to do yet. Try: sudo bench-setup services")
     return 0
