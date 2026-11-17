@@ -10,8 +10,7 @@ else is installed, and ships in a ``.deb`` that depends on the system
     bench-setup services --compose               # the same, for the containers
     bench-setup doctor                           # look, report, change nothing
     sudo bench-setup host                        # virtual camera, torn frames, two cards
-
-The other subcommand (cameras) lands in its own change.
+    sudo bench-setup cameras                     # /dev/cam-* names that don't move
 """
 
 from __future__ import annotations
@@ -126,6 +125,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="remove the files bench-setup host wrote, and only those",
     )
     host.add_argument("--user", help="whose benchhud to read (default: the account that ran sudo)")
+
+    cameras = sub.add_parser(
+        "cameras",
+        help="give the bench cameras /dev/cam-* names that don't move",
+        description=(
+            "List the USB cameras plugged in, ask which is the scope and which the thermal "
+            "if benchhud doesn't know, install the udev rules that give each a /dev/cam-* "
+            "name, and keep the thermal camera out of USB autosuspend. Run it with every "
+            "camera plugged in, and again after adding one."
+        ),
+    )
+    cameras.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="never prompt; without --yes this only reports what it would do",
+    )
+    cameras.add_argument("--yes", action="store_true", help="answer yes to every question")
+    cameras.add_argument(
+        "--user", help="whose benchhud to ask (default: the account that ran sudo)"
+    )
     return parser
 
 
@@ -164,6 +183,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 nodes=args.nodes,
                 user=args.user,
             )
+        )
+    if args.command == "cameras":
+        from bench_setup import cameras
+
+        return cameras.run(
+            cameras.Options(interactive=not args.non_interactive, yes=args.yes, user=args.user)
         )
     # The full guided run isn't here yet: say so plainly instead of pretending.
     print("bench-setup: nothing to do yet. Try: sudo bench-setup services")

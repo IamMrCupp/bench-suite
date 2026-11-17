@@ -26,14 +26,17 @@ from bench_setup.doctor import (
 from bench_setup.host import Host
 from bench_setup.services import EXIT_FAILED, EXIT_OK, EXIT_USAGE, UI, TerminalUI
 
-MARKER = "# Written by bench-setup host. Remove with: sudo bench-setup host --undo"
+MARKER = "# Written by bench-setup. Remove with: sudo bench-setup host --undo"
 
 LOOPBACK_OPTIONS = Path("/etc/modprobe.d/benchhud-loopback.conf")
 LOOPBACK_LOAD = Path("/etc/modules-load.d/benchhud-loopback.conf")
 NODROP_OPTIONS = Path("/etc/modprobe.d/benchhud-uvcvideo.conf")
 ARP_SYSCTL = Path("/etc/sysctl.d/60-benchhud-arp.conf")
-#: Everything this command can write, and so everything --undo may remove.
-OURS = (LOOPBACK_OPTIONS, LOOPBACK_LOAD, NODROP_OPTIONS, ARP_SYSCTL)
+CAMERA_RULES = Path("/etc/udev/rules.d/70-benchhud-cameras.rules")
+THERMAL_RULE = Path("/etc/udev/rules.d/60-benchhud-thermal.rules")
+#: Everything bench-setup host and bench-setup cameras can write, and so
+#: everything --undo may remove.
+OURS = (LOOPBACK_OPTIONS, LOOPBACK_LOAD, NODROP_OPTIONS, ARP_SYSCTL, CAMERA_RULES, THERMAL_RULE)
 
 #: Loopback layouts from BENCH-SETUP.md: how many nodes, their numbers and labels.
 LAYOUTS: dict[int, tuple[tuple[int, str], ...]] = {
@@ -80,7 +83,7 @@ def loopback_options(nodes: int) -> str:
     )
 
 
-def _file(*lines: str) -> str:
+def marked(*lines: str) -> str:
     return "\n".join((MARKER, *lines)) + "\n"
 
 
@@ -144,8 +147,8 @@ class _Steps:
             return
 
         nodes = self._layout(wanted)
-        options = _file(loopback_options(nodes))
-        load = _file("v4l2loopback")
+        options = marked(loopback_options(nodes))
+        load = marked("v4l2loopback")
         ui.say(f"virtual camera: {', '.join(missing)} missing.")
         ui.say(
             "  benchhud sends its picture to OBS through a v4l2loopback node. This sets the "
@@ -250,7 +253,7 @@ class _Steps:
         if value.strip() == "0" and kept:
             ui.say("uvcvideo: already drops torn frames (nodrop=0), and it's set for boot")
             return
-        text = _file("options uvcvideo nodrop=0")
+        text = marked("options uvcvideo nodrop=0")
         ui.say(
             f"uvcvideo: nodrop={value.strip()}" + ("" if kept else ", and nothing sets it at boot")
         )
@@ -290,7 +293,7 @@ class _Steps:
                 "but it isn't in effect. Apply it with: sudo sysctl --system"
             )
             return
-        text = _file(*_ARP_LINES)
+        text = marked(*_ARP_LINES)
         ui.say(f"network: {where}.")
         ui.say(
             "  With two cards on one subnet, each answers ARP for the other's address, "
@@ -321,9 +324,9 @@ class _Steps:
         for path in kept:
             ui.say(f"{path}: not written by bench-setup, left alone")
         if not ours:
-            ui.say("Nothing to undo: bench-setup host hasn't written anything here.")
+            ui.say("Nothing to undo: bench-setup hasn't written anything here.")
             return
-        ui.say("bench-setup host wrote these, and would remove them:")
+        ui.say("bench-setup wrote these, and would remove them:")
         for path in ours:
             ui.say(f"  {path}")
         if not self._ask("Remove them?"):
@@ -339,6 +342,9 @@ class _Steps:
                 ui.say("rebuilt the initramfs without them")
             else:
                 self._fail("update-initramfs -u failed. Run it by hand.")
+        if CAMERA_RULES in ours or THERMAL_RULE in ours:
+            host.run(["udevadm", "control", "--reload"])
+            ui.say("reloaded udev; the /dev/cam-* names go when the cameras are next plugged in")
         ui.say(
             "What's running now stays as it is until the next reboot: a loaded module, the "
             f"live nodrop value and the live ARP settings under {ARP} aren't changed back."
