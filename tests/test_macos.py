@@ -46,6 +46,8 @@ class MacHost(FakeHost):
         self.running: set[str] = set()
         self.declines: set[str] = set(APPS)  # apps that turn down an Apple event quit
         self.stubborn: set[str] = set()  # apps that ignore a SIGTERM too
+        self.fresh: set[str] = set()  # downloaded, never opened: still quarantined
+        self.asking: set[str] = set()  # macOS is holding `open` on a question
         self.extensions = EXTENSION_ON
         self.listening: dict[int, str] = {}  # port -> address, default loopback
         self.config["output"] = {"enabled": True}
@@ -73,6 +75,9 @@ class MacHost(FakeHost):
     def process_running(self, name: str) -> bool:
         return name in self.running
 
+    def quarantined(self, path: Path) -> bool:
+        return path.stem in self.fresh
+
     def read_text(self, path: Path) -> str | None:
         if path.name == "settings.env":
             values = self.settings[path.parent.name]
@@ -87,7 +92,7 @@ class MacHost(FakeHost):
 
     # -- commands ---------------------------------------------------------
 
-    def run(self, cmd, stdin=None):
+    def run(self, cmd, stdin=None, timeout=None):
         cmd = tuple(cmd)
         name = Path(cmd[0]).name
         if name in APPS and "/Contents/MacOS/" in cmd[0]:
@@ -119,6 +124,9 @@ class MacHost(FakeHost):
             return 0, "", ""
         if name == "open":
             app = Path(cmd[-1]).stem
+            assert timeout, "open must never be allowed to wait forever"
+            if app in self.asking:
+                return 124, "", "open: timed out"
             self.running.add(app)
             service = APPS[app]
             # Like the real app: no password, a dialog and no server.
@@ -432,3 +440,30 @@ def test_the_guided_run_on_a_mac_needs_no_sudo() -> None:
     ]
     assert host.running == {"benchhud intake", "bench parts"}
     assert ui.out[-1] == "Nothing wrong."
+
+
+def test_a_freshly_downloaded_app_is_not_opened_into_a_gatekeeper_prompt() -> None:
+    """`open` on a quarantined app waits for a click that a script can't make."""
+    host = MacHost()
+    host.fresh.add("benchhud intake")
+    code, ui = mac(host)
+
+    assert code == EXIT_FAILED
+    assert not [c for c in host.ran("open") if "benchhud intake" in c[-1]]
+    assert any("Open it once from Applications" in line for line in ui.err)
+    assert host.settings["benchhud-intake"]["INTAKE_API_TOKEN"], "the password and token are kept"
+    assert "bench parts" in host.running, "the other app is still set up"
+
+    host.fresh.clear()
+    code, ui = mac(host, FakeUI())
+    assert code == EXIT_OK, ui.text
+    assert ui.password_asks == 0, "the second run needs nothing from the owner"
+    assert "benchhud intake" in host.running
+
+
+def test_open_is_timed_so_a_question_from_macos_cannot_hang_the_run() -> None:
+    host = MacHost()
+    host.asking.add("bench parts")
+    code, ui = mac(host)
+    assert code == EXIT_FAILED
+    assert any("didn't finish opening the bench parts app" in line for line in ui.err)

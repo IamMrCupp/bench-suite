@@ -119,6 +119,7 @@ bench-setup                      # no sudo: the apps are yours
 The [tap](https://github.com/IamMrCupp/homebrew-bench) carries benchhud and `bench-setup`, and `brew upgrade` keeps both current. The two menu-bar apps aren't in it yet — they need notarized builds first — so get those from the [benchhud-intake](https://github.com/IamMrCupp/benchhud-intake/releases) and [bench-parts](https://github.com/IamMrCupp/bench-parts/releases) releases and put them in Applications.
 
 - **benchhud-intake and bench-parts** are menu-bar apps. `bench-setup services` sets the password and makes the token through each app's own binary, opens the app (or quits and reopens one that was running with old settings), and writes the URLs and tokens into benchhud's config.
+- **A freshly installed app has to be opened by you once.** macOS asks before the first launch of anything downloaded, and only you can answer. `bench-setup` sets the password and token, then tells you to open the app from Applications and run it again; the second run wires it up.
 - **bench-recon** has no Mac app. It runs in a container, off until you turn it on: `bench-setup services --compose --recon`.
 - **`bench-setup doctor`** checks the apps the same way, and that macOS has OBS's camera extension turned on — the step people miss.
 - `bench-setup host` and `bench-setup cameras` say they're for Linux and do nothing.
