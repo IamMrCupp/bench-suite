@@ -2,7 +2,7 @@
 
 One install for the repair bench. **bench-suite** sets up the four bench apps on one machine and wires them to each other, so a fresh box goes from nothing to a working bench without hand-copying URLs and tokens between configs.
 
-> **Status: installable on Ubuntu 26.04, amd64.** The signed apt repo is live at `apt.yolorepair.com`, and CI installs from it on a clean machine. On a Mac, `bench-setup` wires the apps you've installed; a Homebrew tap to install them is still to come.
+> **Status: installable on Ubuntu 26.04, amd64.** The signed apt repo is live at `apt.yolorepair.com`, and CI installs from it on a clean machine. On a Mac, a [Homebrew tap](https://github.com/IamMrCupp/homebrew-bench) installs benchhud and `bench-setup`, which wires the apps together.
 
 ## What it puts together
 
@@ -110,21 +110,20 @@ No `sudo` — it only needs to be able to run Docker. Every port is published on
 There's no apt and no systemd on a Mac, and none of the host steps apply: benchhud's picture goes into OBS's own virtual camera. What's left is the wiring, and `bench-setup` does it against the apps themselves:
 
 ```sh
-bench-setup              # no sudo: the apps are yours
+brew tap iammrcupp/bench
+brew install --cask benchhud     # the app: signed and notarized
+brew install bench-setup
+bench-setup                      # no sudo: the apps are yours
 ```
 
-Until the Homebrew tap exists there's no Mac package of `bench-setup` itself. It's plain Python with no dependencies, so [uv](https://docs.astral.sh/uv/) can run it straight from this repo:
-
-```sh
-uvx --from git+https://github.com/IamMrCupp/bench-suite bench-setup
-```
+The [tap](https://github.com/IamMrCupp/homebrew-bench) carries benchhud and `bench-setup`, and `brew upgrade` keeps both current. The two menu-bar apps aren't in it yet — they need notarized builds first — so get those from the [benchhud-intake](https://github.com/IamMrCupp/benchhud-intake/releases) and [bench-parts](https://github.com/IamMrCupp/bench-parts/releases) releases and put them in Applications.
 
 - **benchhud-intake and bench-parts** are menu-bar apps. `bench-setup services` sets the password and makes the token through each app's own binary, opens the app (or quits and reopens one that was running with old settings), and writes the URLs and tokens into benchhud's config.
 - **bench-recon** has no Mac app. It runs in a container, off until you turn it on: `bench-setup services --compose --recon`.
 - **`bench-setup doctor`** checks the apps the same way, and that macOS has OBS's camera extension turned on — the step people miss.
 - `bench-setup host` and `bench-setup cameras` say they're for Linux and do nothing.
 
-It needs app versions whose binaries take commands: benchhud-intake 0.4.0, bench-parts 0.5.0 and benchhud 0.14.4 or newer. With an older one it says so and leaves that app alone. A Homebrew tap to install and update the apps is still to come, and so is Windows.
+It needs app versions whose binaries take commands: benchhud-intake 0.4.0, bench-parts 0.5.0 and benchhud 0.14.4 or newer. With an older one it says so and leaves that app alone. Windows is still to come.
 
 ## License
 
