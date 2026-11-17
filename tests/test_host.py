@@ -182,3 +182,10 @@ def test_commands_never_read_bench_setups_own_stdin() -> None:
         timeout=30,
     )
     assert done.stdout.strip() == "still-here"
+
+
+def test_a_command_that_is_not_installed_is_a_failed_command_not_a_crash() -> None:
+    code, out, err = Host().run(["bench-setup-no-such-command", "--version"])
+    assert code == 127
+    assert out == ""
+    assert "command not found" in err

@@ -102,9 +102,14 @@ class Host:
         Secrets go in on ``stdin`` and come back on stdout; never in ``cmd``,
         which anyone can read in ``ps``.
         """
-        done = subprocess.run(
-            list(cmd), capture_output=True, text=True, check=False, **_stdin(stdin)
-        )
+        try:
+            done = subprocess.run(
+                list(cmd), capture_output=True, text=True, check=False, **_stdin(stdin)
+            )
+        except FileNotFoundError:
+            # What a shell says for a command that isn't there. A minimal
+            # install has no `ip`, and a check that can't run isn't a crash.
+            return 127, "", f"{cmd[0]}: command not found"
         return done.returncode, done.stdout, done.stderr
 
     def run_as_user(
