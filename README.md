@@ -124,7 +124,7 @@ uvx --from git+https://github.com/IamMrCupp/bench-suite bench-setup
 - **`bench-setup doctor`** checks the apps the same way, and that macOS has OBS's camera extension turned on — the step people miss.
 - `bench-setup host` and `bench-setup cameras` say they're for Linux and do nothing.
 
-It needs app versions whose binaries take commands: benchhud-intake 0.4.0, bench-parts 0.5.0 and benchhud 0.14.3 or newer. With an older one it says so and leaves that app alone. A Homebrew tap to install and update the apps is still to come, and so is Windows.
+It needs app versions whose binaries take commands: benchhud-intake 0.4.0, bench-parts 0.5.0 and benchhud 0.14.4 or newer. With an older one it says so and leaves that app alone. A Homebrew tap to install and update the apps is still to come, and so is Windows.
 
 ## License
 
