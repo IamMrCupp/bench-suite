@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.3](https://github.com/IamMrCupp/bench-suite/compare/v1.5.2...v1.5.3) (2026-11-17)
+
+
+### Documentation
+
+* **readme:** install on a Mac through the Homebrew tap ([a5e88a4](https://github.com/IamMrCupp/bench-suite/commit/a5e88a4fac326368be4b416a4bf0c5e28e786c43))
+
 ## [1.5.2](https://github.com/IamMrCupp/bench-suite/compare/v1.5.1...v1.5.2) (2026-11-17)
 
 
