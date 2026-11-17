@@ -44,7 +44,8 @@ class MacHost(FakeHost):
             "OBS": (32, 2, 2),
         }
         self.running: set[str] = set()
-        self.stubborn: set[str] = set()  # apps that ignore a quit
+        self.declines: set[str] = set(APPS)  # apps that turn down an Apple event quit
+        self.stubborn: set[str] = set()  # apps that ignore a SIGTERM too
         self.extensions = EXTENSION_ON
         self.listening: dict[int, str] = {}  # port -> address, default loopback
         self.config["output"] = {"enabled": True}
@@ -104,6 +105,14 @@ class MacHost(FakeHost):
         self.calls.append(("me", cmd, stdin))
         if name == "osascript":
             app = cmd[2].split('"')[1]
+            if app in self.declines:
+                return 1, "", f"execution error: {app} got an error: User canceled. (-128)"
+            self.running.discard(app)
+            self.active.discard(APPS[app].name)
+            return 0, "", ""
+        if name == "pkill":
+            assert cmd[1:3] == ("-TERM", "-x")
+            app = cmd[3]
             if app not in self.stubborn:
                 self.running.discard(app)
                 self.active.discard(APPS[app].name)
@@ -219,10 +228,24 @@ def test_a_running_app_that_got_a_new_token_is_quit_and_reopened() -> None:
 
     assert code == EXIT_OK
     assert host.ran("osascript") == [("osascript", "-e", 'tell application "bench parts" to quit')]
+    assert host.ran("pkill") == [("pkill", "-TERM", "-x", "bench parts")], "it declined the ask"
     assert host.ran("open") == [("open", "-g", "/Applications/bench parts.app")]
     assert (
         host.config["inventory"]["token"] == host.settings["bench-parts"]["BENCH_PARTS_API_TOKEN"]
     )
+
+
+def test_an_app_that_quits_when_asked_is_not_killed() -> None:
+    host = MacHost()
+    mac(host)
+    host.declines.clear()
+    del host.settings["bench-parts"]["BENCH_PARTS_API_TOKEN"]
+    host.calls.clear()
+
+    code, _ = mac(host, FakeUI())
+
+    assert code == EXIT_OK
+    assert host.ran("osascript") and not host.ran("pkill")
 
 
 def test_an_app_that_will_not_quit_is_reported_not_left_stale() -> None:

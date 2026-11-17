@@ -128,8 +128,9 @@ jobs:
             grep -E "^  ok +$name: answering on 127\.0\.0\.1:840[12], password set, token set, benchhud wired$" "$RUNNER_TEMP/doctor.txt"
           done
           ! grep -q FAIL "$RUNNER_TEMP/doctor.txt"
-          osascript -e 'tell application "bench parts" to quit'
+          pkill -TERM -x "bench parts"
           for _ in $(seq 20); do pgrep -x "bench parts" >/dev/null || break; sleep 0.5; done
+          ! pgrep -x "bench parts" >/dev/null
           uv run bench-setup doctor | grep -q "bench-parts: the bench parts app isn't running"
 
       - name: A new token means the running app is quit and reopened
