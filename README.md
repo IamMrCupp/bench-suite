@@ -127,4 +127,4 @@ It needs app versions whose binaries take commands: benchhud-intake 0.4.0, bench
 
 ## License
 
-[PolyForm Small Business 1.0.0](LICENSE), like the rest of the bench apps — free for individuals and small businesses, with commercial licences for anyone above the limits. See [CONTRIBUTING](CONTRIBUTING.md) before sending a change.
+[AGPL-3.0-or-later](LICENSE), like the rest of the bench apps — open source, with commercial licences for anyone the AGPL doesn't fit. See [CONTRIBUTING](CONTRIBUTING.md) before sending a change.
