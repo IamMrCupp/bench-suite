@@ -78,7 +78,8 @@ class _Cameras:
 
     def go(self) -> int:
         host, ui = self.host, self.ui
-        if not host.installed("benchhud"):
+        self.benchhud = host.benchhud(self.user) or ""
+        if not self.benchhud:
             raise _Failed("benchhud isn't installed, and it's what writes the camera rules.")
         if self.user is None or not host.user_exists(self.user):
             raise _Failed(
@@ -137,7 +138,7 @@ class _Cameras:
                 continue
             code, _, err = host.run_as_user(
                 self.user or "",
-                ["benchhud", "config", "set", f"panels.{role}.device", "-"],
+                [self.benchhud, "config", "set", f"panels.{role}.device", "-"],
                 stdin=cameras[choice],
             )
             if code != 0:
@@ -170,7 +171,7 @@ class _Cameras:
         return True
 
     def _camera_rules(self) -> bool:
-        code, out, err = self.host.run_as_user(self.user or "", ["benchhud", "udev-rules"])
+        code, out, err = self.host.run_as_user(self.user or "", [self.benchhud, "udev-rules"])
         if code != 0 or not out.strip():
             tail = err.strip().splitlines()[-1] if err.strip() else f"exit {code}"
             raise _Failed(f"benchhud udev-rules failed: {tail}")
@@ -228,6 +229,9 @@ class _Cameras:
 def run(options: Options, host: Host | None = None, ui: UI | None = None) -> int:
     host = host or Host()
     ui = ui or TerminalUI(options.interactive)
+    if host.is_macos():
+        ui.say("bench-setup cameras is for a Linux bench. A Mac needs none of it.")
+        return EXIT_OK
     if not host.is_root():
         ui.warn("bench-setup cameras writes udev rules. Run it with sudo.")
         return EXIT_USAGE

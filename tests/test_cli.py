@@ -31,6 +31,7 @@ def test_help_names_the_services(capsys) -> None:
 
 def test_no_arguments_without_sudo_changes_nothing_and_says_how(capsys, monkeypatch) -> None:
     monkeypatch.setattr("bench_setup.host.Host.is_root", lambda self: False)
+    monkeypatch.setattr("bench_setup.host.Host.is_macos", lambda self: False)
     assert main([]) == 2
     err = capsys.readouterr().err
     assert "Run it with sudo" in err and "bench-setup doctor" in err

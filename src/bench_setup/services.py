@@ -56,6 +56,23 @@ CONTAINER_SETTINGS = "/data/settings.env"
 
 _LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 
+#: The oldest benchhud Mac app whose binary answers ``config`` on stdout. An
+#: older one opens its window and waits instead.
+BENCHHUD_MAC_MIN = (0, 14, 3)
+
+
+def benchhud_mac_too_old(host: Host, user: str | None) -> str | None:
+    """The installed benchhud Mac app's version if bench-setup can't drive it, else None."""
+    if not host.is_macos() or host.installed("benchhud"):
+        return None
+    bundle = host.app_bundle("benchhud", user)
+    if bundle is None:
+        return None
+    found = host.app_version(bundle)
+    if found >= BENCHHUD_MAC_MIN:
+        return None
+    return ".".join(map(str, found)) or "an unknown version"
+
 
 @dataclass(frozen=True)
 class Service:
@@ -74,6 +91,10 @@ class Service:
     section: str  # benchhud's config section
     holds: str  # what's in it, for the messages
     dormant: bool = False  # installed off; the owner turns it on
+    #: Its Mac app's name, and the oldest version whose binary takes the
+    #: command line's commands. None: there is no Mac app (it runs in a container).
+    mac_app: str | None = None
+    mac_min: tuple[int, ...] = ()
 
     @property
     def settings_path(self) -> Path:
@@ -93,8 +114,26 @@ class Service:
 
 
 SERVICES: tuple[Service, ...] = (
-    Service("benchhud-intake", "intake", "INTAKE", 8401, "intake", "customer records"),
-    Service("bench-parts", "parts", "BENCH_PARTS", 8402, "inventory", "parts stock"),
+    Service(
+        "benchhud-intake",
+        "intake",
+        "INTAKE",
+        8401,
+        "intake",
+        "customer records",
+        mac_app="benchhud intake",
+        mac_min=(0, 4, 0),
+    ),
+    Service(
+        "bench-parts",
+        "parts",
+        "BENCH_PARTS",
+        8402,
+        "inventory",
+        "parts stock",
+        mac_app="bench parts",
+        mac_min=(0, 5, 0),
+    ),
     Service(
         "bench-recon", "recon", "BENCHRECON", 8403, "recon", "client engagement data", dormant=True
     ),
@@ -238,6 +277,104 @@ class _Systemd:
             raise _Failed(f"couldn't {verb} the service. See: {self.logs(service)}")
 
 
+class _MacApps:
+    """macOS: intake and parts are menu-bar apps, set up through their own binaries.
+
+    Each app's binary takes the service's commands (``set-password --stdin``,
+    ``new-token --print``, ``paths``) and keeps its settings in the user's own
+    Application Support folder, so nothing here needs root. The app reads its
+    settings when it starts: after a change, a running app is quit and reopened.
+    """
+
+    QUIT_TRIES = 20
+    QUIT_WAIT = 0.5
+
+    def __init__(self, host: Host, user: str | None) -> None:
+        self.host = host
+        self.user = user
+
+    def _bundle(self, service: Service) -> Path | None:
+        return self.host.app_bundle(service.mac_app, self.user) if service.mac_app else None
+
+    def _binary(self, service: Service) -> str:
+        bundle = self._bundle(service)
+        assert bundle is not None and service.mac_app is not None
+        return str(bundle / "Contents" / "MacOS" / service.mac_app)
+
+    def _as_user(self, cmd: list[str], stdin: str | None = None) -> tuple[int, str, str]:
+        if self.user is None:
+            return self.host.run(cmd, stdin=stdin)
+        return self.host.run_as_user(self.user, cmd, stdin=stdin)
+
+    def missing(self, service: Service) -> str | None:
+        if service.mac_app is None:
+            return (
+                "has no Mac app. It runs in a container: "
+                f"bench-setup services --compose{' --recon' if service.dormant else ''}"
+            )
+        bundle = self._bundle(service)
+        if bundle is None:
+            return f"the {service.mac_app} app isn't in Applications"
+        found = self.host.app_version(bundle)
+        if found < service.mac_min:
+            # An older app would open its menu-bar icon and wait, not answer.
+            have = ".".join(map(str, found)) or "an unknown version"
+            need = ".".join(map(str, service.mac_min))
+            return f"the {service.mac_app} app is {have}; setting it up from here needs {need}"
+        return None
+
+    def none_hint(self) -> str:
+        return (
+            "None of the bench apps are in Applications. Install them, or run the "
+            "services in containers: bench-setup services --compose"
+        )
+
+    def logs(self, service: Service) -> str:
+        return f"the {service.mac_app} icon in the menu bar"
+
+    def enabled(self, service: Service) -> bool:
+        return True
+
+    def settings(self, service: Service) -> dict[str, str]:
+        code, out, err = self.cli(service, ["paths"], None)
+        if code != 0:
+            raise _Failed(f"{service.name} paths failed: {_detail(code, err)}")
+        for line in out.splitlines():
+            key, _, value = line.partition(":")
+            if key.strip() == "settings" and value.strip():
+                return self.host.read_settings(Path(value.strip()))
+        raise _Failed(f"the {service.mac_app} app didn't say where its settings are")
+
+    def cli(self, service: Service, args: list[str], stdin: str | None) -> tuple[int, str, str]:
+        return self._as_user([self._binary(service), *args], stdin)
+
+    def port(self, service: Service, settings: dict[str, str]) -> int:
+        raw = settings.get(service.port_key, "")
+        return int(raw) if raw.isdigit() else service.default_port
+
+    def start(self, service: Service, *, enabled: bool, changed: bool) -> None:
+        host = self.host
+        app = service.mac_app
+        assert app is not None
+        if host.process_running(app):
+            if not changed:
+                return
+            self._as_user(["osascript", "-e", f'tell application "{app}" to quit'])
+            for _ in range(self.QUIT_TRIES):
+                if not host.process_running(app):
+                    break
+                host.sleep(self.QUIT_WAIT)
+            else:
+                raise _Failed(
+                    f"the {app} app didn't quit, so it's still running with its old "
+                    "settings. Quit it from the menu bar and run bench-setup again."
+                )
+        # -g: leave whatever the owner is doing in front.
+        code, _, err = self._as_user(["open", "-g", str(self._bundle(service))])
+        if code != 0:
+            raise _Failed(f"couldn't open the {app} app: {_detail(code, err)}")
+
+
 class _Compose:
     """The container route: everything goes through ``docker compose -f FILE``.
 
@@ -342,14 +479,18 @@ class _Run:
         self.host = host
         self.ui = ui
         self.options = options
-        self.backend: _Systemd | _Compose = (
-            _Compose(host, options.compose) if options.compose else _Systemd(host)
-        )
         # Whose benchhud: --user, else whoever ran sudo, else (no sudo, which
         # only the compose route allows) whoever is running this.
         self.user = (
             options.user or host.sudo_user() or (None if host.is_root() else host.current_user())
         )
+        self.backend: _Systemd | _Compose | _MacApps
+        if options.compose:
+            self.backend = _Compose(host, options.compose)
+        elif host.is_macos():
+            self.backend = _MacApps(host, self.user)
+        else:
+            self.backend = _Systemd(host)
         self._password: str | None = None
         self._password_asked = False
         self._config_path: Path | None = None
@@ -467,7 +608,15 @@ class _Run:
     def _wire_benchhud(self, service: Service, port: int, token: str) -> str:
         """Write the URL and token into benchhud's config. Returns a note for the status line."""
         host = self.host
-        if not host.installed("benchhud"):
+        old = benchhud_mac_too_old(host, self.user)
+        if old is not None:
+            need = ".".join(map(str, BENCHHUD_MAC_MIN))
+            raise _Failed(
+                f"is running, but benchhud wasn't wired: the benchhud app is {old}, and "
+                f"setting it up from here needs {need}. Update it and run bench-setup again."
+            )
+        benchhud = host.benchhud(self.user)
+        if benchhud is None:
             if not self._benchhud_note_shown:
                 self._benchhud_note_shown = True
                 self.ui.say(
@@ -502,7 +651,7 @@ class _Run:
         for key, value in (("base_url", url), ("token", token)):
             code, _, err = host.run_as_user(
                 self.user,
-                ["benchhud", "config", "set", f"{service.section}.{key}", "-"],
+                [benchhud, "config", "set", f"{service.section}.{key}", "-"],
                 stdin=value,
             )
             if code != 0:
@@ -512,7 +661,8 @@ class _Run:
     def _benchhud_config(self) -> Path:
         if self._config_path is None:
             assert self.user is not None
-            code, out, err = self.host.run_as_user(self.user, ["benchhud", "config", "path"])
+            benchhud = self.host.benchhud(self.user) or "benchhud"
+            code, out, err = self.host.run_as_user(self.user, [benchhud, "config", "path"])
             if code != 0 or not out.strip():
                 raise _Failed(f"is running, but benchhud config path failed: {_detail(code, err)}")
             self._config_path = Path(out.strip())
@@ -528,7 +678,13 @@ def run(
     """Set up every installed service. Returns a process exit code."""
     host = host or Host()
     ui = ui or make_ui(options.interactive)
-    if options.compose is None:
+    if options.compose is None and host.is_macos():
+        # The Mac apps belong to the person at the keyboard: no sudo, and a
+        # bare root shell has no one's apps to set up.
+        if host.is_root() and not (options.user or host.sudo_user()):
+            ui.warn("On a Mac, run bench-setup services as yourself, without sudo.")
+            return EXIT_USAGE
+    elif options.compose is None:
         if not host.is_root():
             ui.warn("bench-setup services changes system services. Run it with sudo.")
             return EXIT_USAGE

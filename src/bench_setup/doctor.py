@@ -17,7 +17,15 @@ from pathlib import Path
 from typing import Any
 
 from bench_setup.host import Host, parse_settings
-from bench_setup.services import EXIT_FAILED, EXIT_OK, SERVICES, UI, Service, TerminalUI
+from bench_setup.services import (
+    EXIT_FAILED,
+    EXIT_OK,
+    SERVICES,
+    UI,
+    Service,
+    TerminalUI,
+    benchhud_mac_too_old,
+)
 
 OK, OFF, WARN, FAIL = "ok", "off", "warn", "FAIL"
 
@@ -26,6 +34,7 @@ NODROP = Path("/sys/module/uvcvideo/parameters/nodrop")
 LOOPBACK_MODULE = Path("/sys/module/v4l2loopback")
 _THERMAL_CAM = Path("/dev/cam-thermal")
 _THERMAL_RULE = Path("/etc/udev/rules.d/60-benchhud-thermal.rules")
+OBS_EXTENSION = "com.obsproject.obs-studio.mac-camera-extension"
 ARP = Path("/proc/sys/net/ipv4/conf/all")
 DEFAULT_OUTPUT = "/dev/video10"
 
@@ -66,15 +75,53 @@ def listening_addresses(text: str, port: int) -> list[str]:
     return found
 
 
+def lsof_addresses(text: str) -> list[str]:
+    """The listening addresses in ``lsof -nP -iTCP:PORT -sTCP:LISTEN`` output."""
+    found = []
+    for line in text.splitlines()[1:]:
+        parts = line.split()
+        if len(parts) < 2 or parts[-1] != "(LISTEN)":
+            continue
+        address = parts[-2].rpartition(":")[0].strip("[]")
+        if address == "*":
+            address = "0.0.0.0"
+        try:
+            found.append(str(ipaddress.ip_address(address)))
+        except ValueError:
+            continue
+    return found
+
+
+def obs_extension_state(host: Host) -> tuple[str, str]:
+    """Whether macOS lets OBS's camera extension run, as a report level and a sentence."""
+    where = "System Settings > General > Login Items & Extensions > Camera Extensions"
+    if host.app_bundle("OBS") is None:
+        return WARN, "OBS isn't installed, and benchhud's picture reaches a stream through it"
+    code, out, _ = host.run(["systemextensionsctl", "list"])
+    line = next((ln for ln in out.splitlines() if OBS_EXTENSION in ln), "") if code == 0 else ""
+    if "[activated enabled]" in line:
+        return OK, "OBS's camera extension is on"
+    if line:
+        return WARN, f"OBS's camera extension is installed but not on. Turn it on in {where}"
+    return (
+        WARN,
+        "OBS's camera extension isn't installed yet. Open OBS, press Start Virtual Camera "
+        f"once, allow it in {where}, then stop it again",
+    )
+
+
 def _beyond_loopback(addresses: list[str]) -> list[str]:
     return sorted({a for a in addresses if not ipaddress.ip_address(a).is_loopback})
 
 
 def benchhud_config(host: Host, user: str | None) -> dict[str, Any] | None:
     """``user``'s benchhud config, or None when there's no benchhud (or no one to ask as)."""
-    if not host.installed("benchhud") or user is None or not host.user_exists(user):
+    benchhud = host.benchhud(user)
+    if benchhud is None or user is None or not host.user_exists(user):
         return None
-    code, out, _ = host.run_as_user(user, ["benchhud", "config", "path"])
+    if benchhud_mac_too_old(host, user) is not None:
+        return None  # an old Mac app would open its window instead of answering
+    code, out, _ = host.run_as_user(user, [benchhud, "config", "path"])
     if code != 0 or not out.strip():
         return None
     return host.read_toml(Path(out.strip()))
@@ -139,21 +186,34 @@ class _Doctor:
     def service(self, service: Service, report: Report) -> None:
         host = self.host
         name = service.name
-        if not host.installed(name):
-            report.add(OFF, f"{name}: not installed")
-            return
-        enabled = host.unit_enabled(name)
-        active = host.unit_active(name)
-        if not enabled and not active:
-            if service.dormant:
-                report.add(OFF, f"{name}: installed, off")
-            else:
-                report.add(
-                    WARN, f"{name}: installed but not turned on. Run: sudo bench-setup services"
-                )
-            return
-
-        settings = self._settings(service)
+        mac = host.is_macos()
+        fix = "bench-setup services" if mac else "sudo bench-setup services"
+        logs = (
+            f"the {service.mac_app} icon in the menu bar" if mac else f"journalctl -u {name} -n 30"
+        )
+        if mac:
+            if service.mac_app is None:
+                report.add(OFF, f"{name}: no Mac app (it runs in a container)")
+                return
+            bundle = host.app_bundle(service.mac_app, self.user)
+            if bundle is None:
+                report.add(OFF, f"{name}: not installed")
+                return
+            if not host.process_running(service.mac_app):
+                report.add(WARN, f"{name}: the {service.mac_app} app isn't running. Run: {fix}")
+                return
+            settings = self._mac_settings(service, bundle)
+        else:
+            if not host.installed(name):
+                report.add(OFF, f"{name}: not installed")
+                return
+            if not host.unit_enabled(name) and not host.unit_active(name):
+                if service.dormant:
+                    report.add(OFF, f"{name}: installed, off")
+                else:
+                    report.add(WARN, f"{name}: installed but not turned on. Run: {fix}")
+                return
+            settings = self._settings(service)
         port = service.default_port
         if settings is not None and settings.get(service.port_key, "").isdigit():
             port = int(settings[service.port_key])
@@ -161,10 +221,12 @@ class _Doctor:
 
         body = host.healthz(port)
         if body is None:
-            hint = "" if self.root else " (with sudo, doctor reads the real port from its settings)"
-            report.add(
-                FAIL, f"{name}: nothing answers on {where}{hint}. See: journalctl -u {name} -n 30"
+            hint = (
+                ""
+                if self.root or mac
+                else " (with sudo, doctor reads the real port from its settings)"
             )
+            report.add(FAIL, f"{name}: nothing answers on {where}{hint}. See: {logs}")
             return
         if body.get("app") != name:
             other = body.get("app") or "something else"
@@ -188,13 +250,16 @@ class _Doctor:
             facts.append(f"listens on {reach}: the LAN can reach it, and it holds {service.holds}")
 
         if settings is None:
-            facts.append("password and token not checked (needs sudo)")
+            facts.append(
+                "password and token not checked "
+                + ("(the app is too old to ask)" if mac else "(needs sudo)")
+            )
         else:
             for key, what in ((service.password_key, "password"), (service.token_key, "token")):
                 if settings.get(key):
                     facts.append(f"{what} set")
                 else:
-                    report.add(FAIL, f"{name}: no {what} set. Run: sudo bench-setup services")
+                    report.add(FAIL, f"{name}: no {what} set. Run: {fix}")
                     return
 
         wiring_level, wiring = self._wiring(service, port, settings)
@@ -204,6 +269,18 @@ class _Doctor:
         if wiring:
             facts.append(wiring)
         report.add(level, f"{name}: {', '.join(facts)}")
+
+    def _mac_settings(self, service: Service, bundle: Path) -> dict[str, str] | None:
+        """The Mac app's settings.env, or None when its binary is too old to ask."""
+        if self.user is None or self.host.app_version(bundle) < service.mac_min:
+            return None
+        binary = str(bundle / "Contents" / "MacOS" / str(service.mac_app))
+        code, out, _ = self.host.run_as_user(self.user, [binary, "paths"])
+        for line in out.splitlines() if code == 0 else []:
+            key, _, value = line.partition(":")
+            if key.strip() == "settings" and value.strip():
+                return parse_settings(self.host.read_text(Path(value.strip())) or "")
+        return None
 
     def _settings(self, service: Service) -> dict[str, str] | None:
         """settings.env, or None when it can't be read (it's root's alone)."""
@@ -215,6 +292,9 @@ class _Doctor:
 
     def _beyond_loopback(self, port: int) -> list[str]:
         found: list[str] = []
+        if self.host.is_macos():
+            code, out, _ = self.host.run(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"])
+            return _beyond_loopback(lsof_addresses(out)) if code == 0 else []
         for table in ("/proc/net/tcp", "/proc/net/tcp6"):
             text = self.host.read_text(Path(table))
             if text:
@@ -230,7 +310,11 @@ class _Doctor:
         section = config.get(service.section)
         section = section if isinstance(section, dict) else {}
         url = f"http://127.0.0.1:{port}"
-        fix = "Run: sudo bench-setup services"
+        fix = (
+            "Run: bench-setup services"
+            if self.host.is_macos()
+            else "Run: sudo bench-setup services"
+        )
         if not section.get("token"):
             return FAIL, f"is running, but benchhud has no token for it. {fix}"
         if section.get("base_url") != url:
@@ -239,7 +323,7 @@ class _Doctor:
                 f"benchhud points at {section.get('base_url') or 'nothing'}, not {url}. {fix}",
             )
         if settings is None:
-            return OK, "benchhud has its URL and a token (the match needs sudo to check)"
+            return OK, "benchhud has its URL and a token (the match wasn't checked)"
         if section["token"] != settings.get(service.token_key):
             return FAIL, f"benchhud's token for it isn't the service's token. {fix}"
         return OK, "benchhud wired"
@@ -248,7 +332,7 @@ class _Doctor:
 
     def loopback(self, report: Report) -> None:
         config = self.config()
-        if config is None:
+        if config is None or self.host.is_macos():
             return
         output = config.get("output")
         output = output if isinstance(output, dict) else {}
@@ -271,6 +355,18 @@ class _Doctor:
                 f"virtual camera: {', '.join(missing)} missing though v4l2loopback is loaded. "
                 "Check /etc/modprobe.d/benchhud-loopback.conf, then: sudo update-initramfs -u",
             )
+
+    def obs_extension(self, report: Report) -> None:
+        """macOS: benchhud publishes into OBS's virtual camera, which macOS must allow."""
+        if not self.host.is_macos():
+            return
+        config = self.config()
+        output = (config or {}).get("output")
+        if isinstance(output, dict) and output.get("enabled") is False:
+            report.add(OFF, "virtual camera: benchhud's output is off")
+            return
+        level, text = obs_extension_state(self.host)
+        report.add(level, f"virtual camera: {text}")
 
     def nodrop(self, report: Report) -> None:
         value = self.host.read_text(NODROP)
@@ -326,7 +422,13 @@ def examine(host: Host, options: Options) -> tuple[Report, Report]:
     services, machine = Report(), Report()
     for service in SERVICES:
         doctor.service(service, services)
-    for check in (doctor.loopback, doctor.nodrop, doctor.cameras, doctor.network):
+    # A Mac has none of the Linux host setup: only OBS's camera extension.
+    checks = (
+        (doctor.obs_extension,)
+        if host.is_macos()
+        else (doctor.loopback, doctor.nodrop, doctor.cameras, doctor.network)
+    )
+    for check in checks:
         check(machine)
     return services, machine
 
@@ -343,7 +445,7 @@ def run(options: Options, host: Host | None = None, ui: UI | None = None) -> int
             ui.say(f"  {level:<5} {text}")
     problems = services.count(FAIL) + machine.count(FAIL)
     warnings = services.count(WARN) + machine.count(WARN)
-    if not host.is_root():
+    if not host.is_root() and not host.is_macos():
         ui.say("Run it with sudo to check passwords, tokens and that benchhud's tokens match.")
     if problems or warnings:
         ui.say(
