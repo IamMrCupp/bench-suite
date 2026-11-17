@@ -24,6 +24,8 @@ from bench_setup.services import (
     UI,
     Service,
     TerminalUI,
+    _Compose,
+    _Failed,
     benchhud_mac_too_old,
 )
 
@@ -43,6 +45,8 @@ DEFAULT_OUTPUT = "/dev/video10"
 class Options:
     #: Whose benchhud to look at; None means whoever ran sudo, else whoever runs this.
     user: str | None = None
+    #: Check the containers from this compose file instead of the installed packages.
+    compose: Path | None = None
 
 
 @dataclass
@@ -172,6 +176,7 @@ class _Doctor:
         self.root = host.is_root()
         self.user = options.user or host.sudo_user() or (None if self.root else host.current_user())
         self._config: dict[str, Any] | None = None
+        self.compose = _Compose(host, options.compose) if options.compose else None
 
     # -- benchhud's config ------------------------------------------------
 
@@ -191,7 +196,15 @@ class _Doctor:
         logs = (
             f"the {service.mac_app} icon in the menu bar" if mac else f"journalctl -u {name} -n 30"
         )
-        if mac:
+        fixed_port: int | None = None
+        if self.compose is not None:
+            fix = "bench-setup services --compose"
+            logs = self.compose.logs(service)
+            found = self._container(service, report, fix, logs)
+            if found is None:
+                return
+            settings, fixed_port = found
+        elif mac:
             if service.mac_app is None:
                 report.add(OFF, f"{name}: no Mac app (it runs in a container)")
                 return
@@ -215,7 +228,9 @@ class _Doctor:
                 return
             settings = self._settings(service)
         port = service.default_port
-        if settings is not None and settings.get(service.port_key, "").isdigit():
+        if fixed_port is not None:
+            port = fixed_port  # where compose.yaml publishes it; inside it's always 8000
+        elif settings is not None and settings.get(service.port_key, "").isdigit():
             port = int(settings[service.port_key])
         where = f"127.0.0.1:{port}"
 
@@ -223,7 +238,7 @@ class _Doctor:
         if body is None:
             hint = (
                 ""
-                if self.root or mac
+                if self.root or mac or self.compose is not None
                 else " (with sudo, doctor reads the real port from its settings)"
             )
             report.add(FAIL, f"{name}: nothing answers on {where}{hint}. See: {logs}")
@@ -237,6 +252,10 @@ class _Doctor:
         level = OK
 
         wide = self._beyond_loopback(port)
+        if self.compose is not None:
+            # Docker doesn't always listen where /proc can see it: the file says.
+            reach = self.compose.reach(service)
+            wide = [reach] if reach else []
         if wide:
             reach = ", ".join(wide)
             if service.dormant:
@@ -252,7 +271,13 @@ class _Doctor:
         if settings is None:
             facts.append(
                 "password and token not checked "
-                + ("(the app is too old to ask)" if mac else "(needs sudo)")
+                + (
+                    "(the container wouldn't say)"
+                    if self.compose is not None
+                    else "(the app is too old to ask)"
+                    if mac
+                    else "(needs sudo)"
+                )
             )
         else:
             for key, what in ((service.password_key, "password"), (service.token_key, "token")):
@@ -269,6 +294,30 @@ class _Doctor:
         if wiring:
             facts.append(wiring)
         report.add(level, f"{name}: {', '.join(facts)}")
+
+    def _container(
+        self, service: Service, report: Report, fix: str, logs: str
+    ) -> tuple[dict[str, str] | None, int] | None:
+        """A running container's settings and published port, or None once it's reported."""
+        compose = self.compose
+        assert compose is not None
+        name = service.name
+        try:
+            if compose.missing(service):
+                report.add(OFF, f"{name}: not in {compose.file}")
+                return None
+            if not compose.running(service):
+                if compose.enabled(service):
+                    report.add(FAIL, f"{name}: its container isn't running. See: {logs}")
+                elif service.dormant:
+                    report.add(OFF, f"{name}: in the file, off")
+                else:
+                    report.add(WARN, f"{name}: not brought up. Run: {fix}")
+                return None
+            return compose.running_settings(service), compose.port(service, {})
+        except _Failed as exc:
+            report.add(FAIL, f"{name}: {exc}")
+            return None
 
     def _mac_settings(self, service: Service, bundle: Path) -> dict[str, str] | None:
         """The Mac app's settings.env, or None when its binary is too old to ask."""
@@ -311,7 +360,9 @@ class _Doctor:
         section = section if isinstance(section, dict) else {}
         url = f"http://127.0.0.1:{port}"
         fix = (
-            "Run: bench-setup services"
+            "Run: bench-setup services --compose"
+            if self.compose is not None
+            else "Run: bench-setup services"
             if self.host.is_macos()
             else "Run: sudo bench-setup services"
         )

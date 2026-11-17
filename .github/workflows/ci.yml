@@ -177,6 +177,25 @@ jobs:
           uv run bench-setup services --compose --non-interactive < "$RUNNER_TEMP/password"
           uv run python tests/e2e/check.py intake parts
 
+      # doctor on the real containers. It exits 1 on a problem; a warning from
+      # the host half (this runner has no virtual camera) doesn't count.
+      - name: doctor --compose finds both healthy and recon off
+        run: |
+          uv run bench-setup doctor --compose | tee "$RUNNER_TEMP/doctor.txt"
+          grep -E 'ok +benchhud-intake: answering on 127\.0\.0\.1:8401, password set, token set, benchhud wired' "$RUNNER_TEMP/doctor.txt"
+          grep -E 'ok +bench-parts: answering on 127\.0\.0\.1:8402, password set, token set, benchhud wired' "$RUNNER_TEMP/doctor.txt"
+          grep -E 'off +bench-recon: in the file, off' "$RUNNER_TEMP/doctor.txt"
+
+      - name: doctor --compose notices a stopped container
+        run: |
+          docker compose -f compose.yaml stop parts
+          if uv run bench-setup doctor --compose > "$RUNNER_TEMP/doctor-stopped.txt"; then
+            cat "$RUNNER_TEMP/doctor-stopped.txt"; echo "::error::doctor passed with bench-parts stopped"; exit 1
+          fi
+          grep -E "FAIL +bench-parts: its container isn't running" "$RUNNER_TEMP/doctor-stopped.txt"
+          docker compose -f compose.yaml start parts
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8402/healthz >/dev/null 2>&1 && break; sleep 1; done
+
       - name: A re-run changes nothing
         run: |
           before="$(sha256sum "$BENCH_E2E_CONFIG")"
@@ -188,6 +207,8 @@ jobs:
         run: |
           uv run bench-setup services --compose --non-interactive --recon < "$RUNNER_TEMP/password"
           uv run python tests/e2e/check.py intake parts recon
+          uv run bench-setup doctor --compose | tee "$RUNNER_TEMP/doctor-recon.txt"
+          grep -E 'ok +bench-recon: answering on 127\.0\.0\.1:8403, password set, token set, benchhud wired' "$RUNNER_TEMP/doctor-recon.txt"
 
       - name: Container logs
         if: failure()

@@ -458,6 +458,33 @@ class _Compose:
         code, out, _ = self._dc("ps", "--all", "--quiet", service.compose_name)
         return code == 0 and bool(out.strip())
 
+    def running(self, service: Service) -> bool:
+        code, out, _ = self._dc("ps", "--status", "running", "--quiet", service.compose_name)
+        return code == 0 and bool(out.strip())
+
+    def running_settings(self, service: Service) -> dict[str, str] | None:
+        """settings.env as the running container sees it, or None if it can't be asked.
+
+        Unlike :meth:`settings` this starts nothing: doctor uses it.
+        """
+        code, out, _ = self._dc(
+            "exec",
+            "-T",
+            service.compose_name,
+            "sh",
+            "-c",
+            f"cat {CONTAINER_SETTINGS} 2>/dev/null || true",
+        )
+        return parse_settings(out) if code == 0 else None
+
+    def reach(self, service: Service) -> str | None:
+        """The address compose.yaml publishes it on when that's beyond this machine."""
+        for entry in self._services()[service.compose_name].get("ports") or []:
+            if isinstance(entry, dict) and entry.get("target") == CONTAINER_PORT:
+                host_ip = str(entry.get("host_ip") or "")
+                return None if host_ip in _LOOPBACK else (host_ip or "every address")
+        return None
+
     def settings(self, service: Service) -> dict[str, str]:
         code, out, err = self._run_in(
             service, ["sh", "-c", f"cat {CONTAINER_SETTINGS} 2>/dev/null || true"]
@@ -490,8 +517,7 @@ class _Compose:
 
     def start(self, service: Service, *, enabled: bool, changed: bool) -> None:
         name = service.compose_name
-        code, out, _ = self._dc("ps", "--status", "running", "--quiet", name)
-        running = code == 0 and bool(out.strip())
+        running = self.running(service)
         if running and not changed:
             return
         # A running container read its settings at start: restart to pick up
