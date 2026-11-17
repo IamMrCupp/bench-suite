@@ -30,7 +30,7 @@ sudo bench-setup
 
 The key's fingerprint is `3826 D3D3 D136 48B5 336F  CA37 F099 3D55 EB7D F44C` — check it with `gpg --show-keys /usr/share/keyrings/bench-archive-keyring.gpg` if you like to know what you're trusting.
 
-`bench-suite` is a metapackage: it pulls in benchhud and recommends the three services and `bench-setup`. `bench-setup` then:
+`bench-suite` is a metapackage: it pulls in benchhud and recommends the three services and `bench-setup`. Plain `sudo bench-setup` then walks every step in order, asking as it goes — the services, [the host](#the-host-steps), [the camera names](#camera-names), [what to tell OBS](#what-to-tell-obs), and [a check](#checking-on-it) at the end. Each step is also a command of its own. The services step, `sudo bench-setup services`:
 
 - asks for **one** password and sets it on every service,
 - mints each service's API token and writes it into benchhud's config, with the URLs,
@@ -85,6 +85,14 @@ sudo bench-setup cameras
 - and tells you which names to give OBS, and which cameras OBS shouldn't open at all.
 
 Run it again after adding a camera. `sudo bench-setup host --undo` removes these rules along with the rest.
+
+### What to tell OBS
+
+```sh
+bench-setup obs
+```
+
+Scenes are yours, so nothing here builds them. This lists the devices the bench gives OBS by names that hold still — benchhud's picture, and each other camera's `/dev/cam-*` name — and reads the scene collections OBS already has for the two mistakes that break a bench: a source saved as `/dev/videoN`, and a source on the scope or thermal camera, which benchhud needs for itself. It never edits a scene.
 
 ### In containers instead
 

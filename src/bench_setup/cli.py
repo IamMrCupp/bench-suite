@@ -4,13 +4,16 @@ Standard library only, on purpose: it runs on a fresh host before anything
 else is installed, and ships in a ``.deb`` that depends on the system
 ``python3`` alone.
 
+    sudo bench-setup                             # every step below, in order, asking as it goes
+
     sudo bench-setup services                    # set up the services, wire benchhud
     sudo bench-setup services --recon            # ...and turn bench-recon on
     printf '%s\\n' "$PW" | sudo bench-setup services --non-interactive
     bench-setup services --compose               # the same, for the containers
-    bench-setup doctor                           # look, report, change nothing
     sudo bench-setup host                        # virtual camera, torn frames, two cards
     sudo bench-setup cameras                     # /dev/cam-* names that don't move
+    bench-setup obs                              # what to point OBS at
+    bench-setup doctor                           # look, report, change nothing
 """
 
 from __future__ import annotations
@@ -27,8 +30,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="bench-setup",
         description=(
-            "Set up the bench: turn on benchhud-intake, bench-parts and bench-recon, "
-            "and point benchhud at them."
+            "Set up the bench: turn on benchhud-intake, bench-parts and bench-recon, point "
+            "benchhud at them, and get the host ready. With no command it runs every step "
+            "in order, asking as it goes: the services, the host, the camera names, what to "
+            "tell OBS, and a check at the end. Each step is also a command on its own."
         ),
     )
     parser.add_argument("-V", "--version", action="version", version=f"bench-setup {__version__}")
@@ -145,6 +150,17 @@ def build_parser() -> argparse.ArgumentParser:
     cameras.add_argument(
         "--user", help="whose benchhud to ask (default: the account that ran sudo)"
     )
+
+    obs = sub.add_parser(
+        "obs",
+        help="say which devices to point OBS at, and check the scenes it has",
+        description=(
+            "List the devices the bench gives OBS by the names that hold still, and read "
+            "OBS's scene collections for sources saved as /dev/videoN or pointed at a camera "
+            "benchhud needs for itself. Reads only; it never edits a scene."
+        ),
+    )
+    obs.add_argument("--user", help="whose benchhud and OBS to read (default: yours)")
     return parser
 
 
@@ -190,6 +206,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return cameras.run(
             cameras.Options(interactive=not args.non_interactive, yes=args.yes, user=args.user)
         )
-    # The full guided run isn't here yet: say so plainly instead of pretending.
-    print("bench-setup: nothing to do yet. Try: sudo bench-setup services")
-    return 0
+    if args.command == "obs":
+        from bench_setup import obs
+
+        return obs.run(obs.Options(user=args.user))
+    from bench_setup import guided
+
+    return guided.run()

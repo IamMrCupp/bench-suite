@@ -102,6 +102,12 @@ class Host:
     def same_device(self, a: str, b: str) -> bool:
         return bool(a) and bool(b) and os.path.realpath(a) == os.path.realpath(b)
 
+    def home_of(self, user: str) -> Path | None:
+        try:
+            return Path(pwd.getpwnam(user).pw_dir)
+        except KeyError:
+            return None
+
     def write_file(self, path: Path, text: str) -> None:
         """Write a root-owned, world-readable config file, whole or not at all."""
         path.parent.mkdir(parents=True, exist_ok=True)

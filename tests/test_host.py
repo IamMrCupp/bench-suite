@@ -189,3 +189,11 @@ def test_a_command_that_is_not_installed_is_a_failed_command_not_a_crash() -> No
     assert code == 127
     assert out == ""
     assert "command not found" in err
+
+
+def test_a_prompt_with_no_one_at_the_keyboard_is_a_no(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(sys, "stdin", io.StringIO(""))
+    ui = TerminalUI(interactive=True)
+    assert ui.ask_yes_no("Load the module now?") is False
+    assert ui.ask_choice("Which one is the scope camera?", 3) is None
+    capsys.readouterr()

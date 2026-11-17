@@ -242,6 +242,24 @@ jobs:
           grep -q "no USB cameras are plugged in" "$RUNNER_TEMP/cameras.txt"
           docker exec sd sh -c '! ls /etc/udev/rules.d/*benchhud* 2>/dev/null'
 
+      - name: bench-setup obs says what to give OBS, without sudo
+        run: |
+          docker exec -u bench -e HOME=/home/bench sd bench-setup obs | tee "$RUNNER_TEMP/obs.txt"
+          grep -q "/dev/video10: the whole HUD" "$RUNNER_TEMP/obs.txt"
+          grep -q "sudo bench-setup cameras" "$RUNNER_TEMP/obs.txt"
+
+      # Plain `sudo bench-setup` on a bench that's already set up, with no one
+      # at the keyboard: every question is a no, nothing changes, doctor passes.
+      - name: sudo bench-setup walks every step and changes nothing here
+        run: |
+          before=$(docker exec sd sh -c 'sha256sum /var/lib/*/settings.env; ls /etc/modprobe.d /etc/modules-load.d /etc/sysctl.d /etc/udev/rules.d')
+          docker exec -u bench -e HOME=/home/bench sd sudo bench-setup < /dev/null | tee "$RUNNER_TEMP/guided.txt"
+          for title in Services Host Cameras OBS Check; do grep -qx "== $title ==" "$RUNNER_TEMP/guided.txt"; done
+          test "$(grep -c 'already set up' "$RUNNER_TEMP/guided.txt")" = 3
+          ! grep -q FAIL "$RUNNER_TEMP/guided.txt"
+          after=$(docker exec sd sh -c 'sha256sum /var/lib/*/settings.env; ls /etc/modprobe.d /etc/modules-load.d /etc/sysctl.d /etc/udev/rules.d')
+          test "$before" = "$after"
+
       - name: doctor notices a service that stopped answering
         run: |
           docker exec sd systemctl stop bench-parts

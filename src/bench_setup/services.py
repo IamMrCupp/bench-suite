@@ -136,27 +136,38 @@ class TerminalUI:
         if not self.interactive:
             line = sys.stdin.readline().removesuffix("\n").removesuffix("\r")
             return line if line.strip() else None
-        for _ in range(PASSWORD_TRIES):
-            first = getpass.getpass("Password for the bench services: ")
-            if not first.strip():
-                self.warn("The password can't be blank.")
-                continue
-            if first != getpass.getpass("Again: "):
-                self.warn("The passwords didn't match.")
-                continue
-            return first
+        try:
+            for _ in range(PASSWORD_TRIES):
+                first = getpass.getpass("Password for the bench services: ")
+                if not first.strip():
+                    self.warn("The password can't be blank.")
+                    continue
+                if first != getpass.getpass("Again: "):
+                    self.warn("The passwords didn't match.")
+                    continue
+                return first
+        except EOFError:
+            pass  # no one at the keyboard: the same as giving no password
         return None
 
     def ask_yes_no(self, question: str) -> bool:
         if not self.interactive:
             return False
-        return input(f"{question} [y/N] ").strip().lower() in {"y", "yes"}
+        try:
+            return input(f"{question} [y/N] ").strip().lower() in {"y", "yes"}
+        except EOFError:
+            print()
+            return False  # no one at the keyboard is a no
 
     def ask_choice(self, question: str, count: int) -> int | None:
         """A number from 1 to ``count``, as an index; None for Enter or anything else."""
         if not self.interactive:
             return None
-        answer = input(f"{question} [1-{count}, Enter for none] ").strip()
+        try:
+            answer = input(f"{question} [1-{count}, Enter for none] ").strip()
+        except EOFError:
+            print()
+            return None
         return int(answer) - 1 if answer.isdigit() and 1 <= int(answer) <= count else None
 
 
