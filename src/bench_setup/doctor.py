@@ -445,7 +445,8 @@ def run(options: Options, host: Host | None = None, ui: UI | None = None) -> int
             ui.say(f"  {level:<5} {text}")
     problems = services.count(FAIL) + machine.count(FAIL)
     warnings = services.count(WARN) + machine.count(WARN)
-    if not host.is_root() and not host.is_macos():
+    # Only when sudo would show more: a service was there, and its settings weren't readable.
+    if any("(needs sudo)" in text for _, text in services.lines):
         ui.say("Run it with sudo to check passwords, tokens and that benchhud's tokens match.")
     if problems or warnings:
         ui.say(

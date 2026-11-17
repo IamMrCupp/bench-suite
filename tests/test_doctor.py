@@ -422,3 +422,16 @@ def test_cli_runs_doctor(monkeypatch) -> None:
     assert seen[-1].user is None
     assert main(["doctor", "--user", "aaron"]) == 0
     assert seen[-1].user == "aaron"
+
+
+def test_sudo_is_only_suggested_when_it_would_show_more() -> None:
+    """A bench with none of the services installed: sudo has nothing to add."""
+    host = DoctorHost()
+    host.root, host.sudo = False, None
+    host.commands -= {"benchhud-intake", "bench-parts", "bench-recon"}
+    _, ui, _ = check(host)
+    assert not any("sudo" in line for line in ui.out)
+
+    host = DoctorHost()
+    _, ui, _ = check(host)  # already root
+    assert not any("Run it with sudo" in line for line in ui.out)
