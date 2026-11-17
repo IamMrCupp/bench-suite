@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.1](https://github.com/IamMrCupp/bench-suite/compare/v1.4.0...v1.4.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **cameras:** name each camera once, and explain the thermal rule only when asking ([6921bfd](https://github.com/IamMrCupp/bench-suite/commit/6921bfd7e7f38ab9d9f727bdc0baca77928a1d1e))
+
 ## [1.4.0](https://github.com/IamMrCupp/bench-suite/compare/v1.3.0...v1.4.0) (2026-11-17)
 
 
