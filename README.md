@@ -53,7 +53,7 @@ bench-recon stays off there too unless you pass `--recon`. Quit benchhud before 
 sudo bench-setup doctor
 ```
 
-`doctor` looks and reports; it changes nothing. For each service: is it on, does it answer as itself, does it listen only on this machine, are the password and token set, and does benchhud hold the matching token. For the host: the things benchhud's [BENCH-SETUP.md](https://github.com/IamMrCupp/benchhud/blob/main/docs/BENCH-SETUP.md) has you set up by hand — the virtual camera nodes, `uvcvideo`'s `nodrop`, the `/dev/cam-*` names, two network cards on one subnet. It never prints a secret, only "set" or not. Without `sudo` it still runs, and says what it couldn't check. It exits 1 if something is broken, so a script can lean on it. It checks the installed packages, not the containers.
+`doctor` looks and reports; it changes nothing. For each service: is it on, does it answer as itself, does it listen only on this machine, are the password and token set, and does benchhud hold the matching token. For the host: the things benchhud's [BENCH-SETUP.md](https://github.com/IamMrCupp/benchhud/blob/main/docs/BENCH-SETUP.md) has you set up by hand — the virtual camera nodes, `uvcvideo`'s `nodrop`, the `/dev/cam-*` names, two network cards on one subnet. It never prints a secret, only "set" or not. Without `sudo` it still runs, and says what it couldn't check. It exits 1 if something is broken, so a script can lean on it. For the containers, `bench-setup doctor --compose` (below).
 
 ### The host steps
 
@@ -104,6 +104,8 @@ bench-setup services --compose --recon    # ...and turn bench-recon on
 ```
 
 No `sudo` — it only needs to be able to run Docker. Every port is published on `127.0.0.1` only. bench-recon sits behind a compose profile, so a plain `docker compose up -d` never starts it, and `bench-setup` won't set it up if you've edited the file to publish it beyond this machine. The password and tokens live in each service's volume, not in the compose file or a `.env`.
+
+`bench-setup doctor --compose` checks them the same way it checks the packages: is each container up, does it answer as itself, does the file publish it only on this machine, are the password and token set, and does benchhud hold the matching token. It reads the settings from the running container and starts nothing.
 
 ### On a Mac
 

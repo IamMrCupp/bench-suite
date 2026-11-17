@@ -288,3 +288,194 @@ def test_shipped_compose_file_matches_the_services() -> None:
     assert 'profiles: ["recon"]' in text
     assert text.count("profiles:") == 1
     assert CONFIG  # shared fixture import stays used
+
+
+# -- doctor --compose (the read-only side) ---------------------------------
+
+
+class DoctorComposeHost(ComposeHost):
+    """A machine after a good ``bench-setup services --compose --recon`` run."""
+
+    def __init__(self, *, recon: bool = True) -> None:
+        super().__init__()
+        code, ui = compose(self, recon=recon)
+        assert code == EXIT_OK, ui.text
+        self.calls.clear()
+        self.exec_ok = True
+
+    def _dc_ps(self, args, stdin):
+        if "--status" in args:
+            assert args[:2] == ["--status", "running"]
+        return super()._dc_ps(args, stdin)
+
+    def _dc_exec(self, args, stdin):
+        assert args[0] == "-T" and args[2:4] == ["sh", "-c"], "reads inside the container"
+        if not self.exec_ok:
+            return 1, "", "exec failed"
+        service = BY_COMPOSE[args[1]]
+        assert self.containers.get(args[1]) == "running", "exec needs a running container"
+        lines = [f"{k}={v}" for k, v in self.settings[service.name].items()]
+        return 0, "\n".join(lines) + "\n", ""
+
+    def run(self, cmd, stdin=None):
+        cmd = tuple(cmd)
+        if cmd[0] == "ip":
+            return 0, "[]", ""
+        return super().run(cmd, stdin)
+
+    # The Linux host checks: nothing set up, nothing to find.
+    def exists(self, path: Path) -> bool:
+        return False
+
+    def glob(self, pattern: str) -> list[str]:
+        return []
+
+    def read_text(self, path: Path) -> str | None:
+        return None
+
+
+def examine(host: DoctorComposeHost) -> tuple[int, FakeUI, dict[str, tuple[str, str]]]:
+    from bench_setup import doctor
+
+    before = (json.dumps(host.settings, sort_keys=True), dict(host.containers), dict(host.config))
+    ui = FakeUI()
+    code = doctor.run(doctor.Options(compose=FILE), host=host, ui=ui)
+    assert (
+        json.dumps(host.settings, sort_keys=True),
+        dict(host.containers),
+        dict(host.config),
+    ) == before, "doctor changed something"
+    verbs = {c[6] for c in host.ran("docker", "compose") if len(c) > 6}
+    assert verbs <= {"config", "ps", "exec"}, f"doctor ran {verbs}: it must start nothing"
+    secrets = [v for values in host.settings.values() for v in values.values() if v]
+    assert not any(secret in ui.text for secret in secrets), "doctor printed a secret"
+    lines = {}
+    for line in ui.out:
+        level, _, rest = line.strip().partition(" ")
+        if ": " in rest:
+            subject, _, text = rest.strip().partition(": ")
+            lines[subject] = (level, text)
+    return code, ui, lines
+
+
+def test_doctor_compose_healthy() -> None:
+    code, ui, lines = examine(DoctorComposeHost())
+
+    assert code == EXIT_OK, ui.text
+    for name, port in (("benchhud-intake", 8401), ("bench-parts", 8402), ("bench-recon", 8403)):
+        level, text = lines[name]
+        assert level == "ok", text
+        assert f"answering on 127.0.0.1:{port}" in text
+        assert "password set" in text and "token set" in text and "benchhud wired" in text
+    assert "Run it with sudo" not in ui.text, "the compose route never needs it"
+
+
+def test_doctor_compose_recon_off_is_not_a_problem() -> None:
+    code, _, lines = examine(DoctorComposeHost(recon=False))
+
+    assert code == EXIT_OK
+    assert lines["bench-recon"] == ("off", "in the file, off")
+
+
+def test_doctor_compose_service_never_brought_up_is_a_warning() -> None:
+    host = DoctorComposeHost()
+    del host.containers["parts"]
+    code, _, lines = examine(host)
+
+    assert code == EXIT_OK
+    level, text = lines["bench-parts"]
+    assert level == "warn" and "bench-setup services --compose" in text
+
+
+def test_doctor_compose_stopped_container_is_a_failure_that_points_at_its_logs() -> None:
+    host = DoctorComposeHost()
+    host.containers["intake"] = "exited"
+    code, _, lines = examine(host)
+
+    assert code == EXIT_FAILED
+    level, text = lines["benchhud-intake"]
+    assert level == "FAIL" and f"docker compose -f {FILE} logs intake" in text
+
+
+def test_doctor_compose_follows_the_published_port() -> None:
+    host = DoctorComposeHost()
+    host.ports["intake"]["published"] = "9401"
+    code, _, lines = examine(host)
+
+    # The container answers on 9401 now; benchhud still points at 8401.
+    assert code == EXIT_FAILED
+    assert (
+        "benchhud points at http://127.0.0.1:8401, not http://127.0.0.1:9401"
+        in (lines["benchhud-intake"][1])
+    )
+
+
+def test_doctor_compose_published_beyond_this_machine() -> None:
+    host = DoctorComposeHost()
+    host.ports["parts"]["host_ip"] = ""
+    host.ports["recon"]["host_ip"] = "0.0.0.0"
+    code, _, lines = examine(host)
+
+    assert code == EXIT_FAILED
+    level, text = lines["bench-parts"]
+    assert level == "warn" and "every address" in text and "the LAN can reach it" in text
+    level, text = lines["bench-recon"]
+    assert level == "FAIL" and "beyond this machine" in text
+
+
+def test_doctor_compose_wrong_token_in_benchhud() -> None:
+    host = DoctorComposeHost()
+    host.config["inventory"]["token"] = "stale"
+    code, _, lines = examine(host)
+
+    assert code == EXIT_FAILED
+    assert "isn't the service's token" in lines["bench-parts"][1]
+
+
+def test_doctor_compose_when_the_container_wont_say() -> None:
+    host = DoctorComposeHost()
+    host.exec_ok = False
+    code, ui, lines = examine(host)
+
+    assert code == EXIT_OK
+    assert "the container wouldn't say" in lines["benchhud-intake"][1]
+    assert "the match wasn't checked" in lines["benchhud-intake"][1]
+    assert "Run it with sudo" not in ui.text
+
+
+def test_doctor_compose_service_missing_from_the_file() -> None:
+    host = DoctorComposeHost(recon=False)
+    del host.ports["recon"]
+    code, _, lines = examine(host)
+
+    assert code == EXIT_OK
+    assert lines["bench-recon"] == ("off", f"not in {FILE}")
+
+
+def test_doctor_compose_without_docker_is_a_failure_not_a_crash() -> None:
+    host = DoctorComposeHost()
+    host._dc_config = lambda args, stdin: (127, "", "docker: command not found")
+    code, _, lines = examine(host)
+
+    assert code == EXIT_FAILED
+    assert all(lines[s.name][0] == "FAIL" for s in SERVICES)
+    assert "docker compose can't read" in lines["benchhud-intake"][1]
+
+
+def test_cli_doctor_compose_flag(monkeypatch, tmp_path, capsys) -> None:
+    from bench_setup import doctor
+
+    seen: list[doctor.Options] = []
+    monkeypatch.setattr(doctor, "run", lambda options: seen.append(options) or 0)
+    monkeypatch.setattr(services, "COMPOSE_FILES", (Path("compose.yaml"),))
+
+    monkeypatch.chdir(tmp_path)
+    assert main(["doctor", "--compose"]) == EXIT_USAGE
+    assert "no compose file" in capsys.readouterr().err
+
+    (tmp_path / "compose.yaml").write_text("services: {}\n")
+    assert main(["doctor", "--compose"]) == 0
+    assert seen[-1].compose == (tmp_path / "compose.yaml").resolve()
+
+    assert main(["doctor"]) == 0
+    assert seen[-1].compose is None

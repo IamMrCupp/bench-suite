@@ -97,6 +97,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--user",
         help="whose benchhud to look at (default: the account that ran it)",
     )
+    doctor.add_argument(
+        "--compose",
+        nargs="?",
+        const="",
+        metavar="FILE",
+        help=(
+            "check the containers from a compose file instead of the installed packages; "
+            "FILE defaults to ./compose.yaml, then the one bench-suite installs"
+        ),
+    )
 
     host = sub.add_parser(
         "host",
@@ -164,18 +174,32 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+#: ``--compose`` was given with no file, and none was found.
+_NO_FILE = Path("/nonexistent/bench-setup-no-compose-file")
+
+
+def _compose_file(arg: str | None) -> Path | None:
+    """The compose file ``--compose [FILE]`` names: None without the flag, _NO_FILE if none."""
+    from bench_setup import services
+
+    if arg is None:
+        return None
+    found = Path(arg).resolve() if arg else services.find_compose_file()
+    if found is None:
+        looked = " or ".join(str(p) for p in services.COMPOSE_FILES)
+        print(f"bench-setup: no compose file at {looked}. Name one.", file=sys.stderr)
+        return _NO_FILE
+    return found
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "services":
         from bench_setup import services
 
-        compose: Path | None = None
-        if args.compose is not None:
-            compose = Path(args.compose).resolve() if args.compose else services.find_compose_file()
-            if compose is None:
-                looked = " or ".join(str(p) for p in services.COMPOSE_FILES)
-                print(f"bench-setup: no compose file at {looked}. Name one.", file=sys.stderr)
-                return services.EXIT_USAGE
+        compose = _compose_file(args.compose)
+        if compose is _NO_FILE:
+            return services.EXIT_USAGE
         return services.run(
             services.Options(
                 interactive=not args.non_interactive,
@@ -187,7 +211,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "doctor":
         from bench_setup import doctor
 
-        return doctor.run(doctor.Options(user=args.user))
+        compose = _compose_file(args.compose)
+        if compose is _NO_FILE:
+            return 2  # usage
+        return doctor.run(doctor.Options(user=args.user, compose=compose))
     if args.command == "host":
         from bench_setup import hostsetup
 
