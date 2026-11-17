@@ -2,7 +2,7 @@
 
 One install for the repair bench. **bench-suite** sets up the four bench apps on one machine and wires them to each other, so a fresh box goes from nothing to a working bench without hand-copying URLs and tokens between configs.
 
-> **Status: under construction.** The `bench-setup` and `bench-suite` packages build, and CI installs them with the four apps on a clean Ubuntu 26.04 and runs the setup end to end. What's missing is the apt repo that delivers them. The pieces land one change at a time.
+> **Status: installable on Ubuntu 26.04, amd64.** The signed apt repo is live at `apt.yolorepair.com`, and CI installs from it on a clean machine. bench-recon isn't in the repo yet ([bench-recon#35](https://github.com/IamMrCupp/bench-recon/issues/35)), so for now you get benchhud, intake and parts. macOS and the host setup (cameras, OBS) are still to come.
 
 ## What it puts together
 
@@ -15,13 +15,20 @@ One install for the repair bench. **bench-suite** sets up the four bench apps on
 
 The services listen on loopback only. benchhud talks to them on the same box; nothing is reachable from the LAN unless you put it there.
 
-## How it'll work
+## Install
 
 ```sh
-# Add the bench apt repo (signed, at apt.yolorepair.com) — instructions land with the repo itself.
+# The repo's signing key, then the repo itself.
+sudo curl -fsSLo /usr/share/keyrings/bench-archive-keyring.gpg https://apt.yolorepair.com/bench-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/bench-archive-keyring.gpg] https://apt.yolorepair.com stable main" \
+  | sudo tee /etc/apt/sources.list.d/bench.list
+
+sudo apt update
 sudo apt install bench-suite
 sudo bench-setup
 ```
+
+The key's fingerprint is `3826 D3D3 D136 48B5 336F  CA37 F099 3D55 EB7D F44C` — check it with `gpg --show-keys /usr/share/keyrings/bench-archive-keyring.gpg` if you like to know what you're trusting.
 
 `bench-suite` is a metapackage: it pulls in benchhud and recommends the three services and `bench-setup`. `bench-setup` then:
 
