@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.5.0](https://github.com/IamMrCupp/bench-suite/compare/v1.4.1...v1.5.0) (2026-11-17)
+
+
+### Features
+
+* **macos:** set up the menu-bar apps on a Mac, and check OBS's camera extension ([096932f](https://github.com/IamMrCupp/bench-suite/commit/096932f1198c1027a20e4d36bce4da40b6f1812d))
+
+
+### Documentation
+
+* **readme:** how to run bench-setup on a Mac before the tap exists ([b6601a2](https://github.com/IamMrCupp/bench-suite/commit/b6601a2d66d90217a687303753eff527e656251c))
+
 ## [1.4.1](https://github.com/IamMrCupp/bench-suite/compare/v1.4.0...v1.4.1) (2026-11-17)
 
 
