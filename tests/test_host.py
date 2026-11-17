@@ -203,3 +203,20 @@ def test_a_command_that_outlives_its_timeout_is_stopped_and_reported() -> None:
     code, _, err = Host().run(["sleep", "5"], timeout=0.2)
     assert code == 124
     assert "timed out" in err
+
+
+def test_write_file_takes_a_mode_and_leaves_no_temp_file(tmp_path) -> None:
+    path = tmp_path / "sudoers.d" / "benchhud-uhubctl"
+    Host().write_file(path, "line\n", mode=0o440)
+    assert path.read_text() == "line\n"
+    assert path.stat().st_mode & 0o777 == 0o440
+    assert [p.name for p in path.parent.iterdir()] == ["benchhud-uhubctl"]
+
+    other = tmp_path / "plain.conf"
+    Host().write_file(other, "x\n")
+    assert other.stat().st_mode & 0o777 == 0o644
+
+
+def test_which_follows_links_and_knows_a_missing_command() -> None:
+    assert Host().which("sh") and Host().which("sh").startswith("/")
+    assert Host().which("no-such-command-here") is None

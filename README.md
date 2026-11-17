@@ -61,15 +61,17 @@ sudo bench-setup doctor
 sudo bench-setup host
 ```
 
-Three things benchhud's [BENCH-SETUP.md](https://github.com/IamMrCupp/benchhud/blob/main/docs/BENCH-SETUP.md) has you do by hand, as prompts:
+Five things benchhud's [BENCH-SETUP.md](https://github.com/IamMrCupp/benchhud/blob/main/docs/BENCH-SETUP.md) has you do by hand, as prompts:
 
 - **The virtual camera.** The `v4l2loopback` node benchhud sends its picture to OBS through: the options file, load-at-boot, and the initramfs rebuild that makes the options stick. One node, two (if you also use OBS's own virtual camera) or four (separate scope and thermal feeds). Loading the module is its own question — say no and it waits for the next reboot. With Secure Boot on, it tells you about the MOK screen you'll meet; it can't do that part for you.
 - **Torn frames.** `uvcvideo nodrop=0`, so a thermal frame that lost data on USB is dropped instead of shown torn.
 - **Two network cards on one subnet.** The ARP settings that stop a wired-plus-Wi-Fi bench booting with no IPv4 routes. Only offered when that's the bench you have.
+- **Your account's groups.** `dialout`, `video` and `plugdev`, for the serial instruments, the cameras and USB. It adds the ones you're missing; you log out and back in.
+- **Resetting a hung camera.** Only offered when `uhubctl` is installed and finds a hub that can switch its ports. It writes one sudoers line letting your account run `uhubctl` as root without a password, which is what lets benchhud power-cycle a camera that stays gone. The file is checked with `visudo` before it's written and again after, and taken back out if sudo objects. You still tell benchhud which port, with `reset_port`.
 
 Each step looks first, shows you the file it would write, and asks. A step that doesn't apply says nothing; one that's already done says so. If you've already set something up by hand, your file is left alone.
 
-`sudo bench-setup host --undo` removes the files `bench-setup` wrote — they carry a marker line — and nothing else. From a script, `--non-interactive --yes` answers yes throughout, and without `--yes` it only reports.
+`sudo bench-setup host --undo` removes the files `bench-setup` wrote — they carry a marker line — and nothing else. Group memberships stay. From a script, `--non-interactive --yes` answers yes throughout, and without `--yes` it only reports.
 
 ### Camera names
 
