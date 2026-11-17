@@ -117,6 +117,7 @@ class UI(Protocol):
     def warn(self, message: str) -> None: ...
     def ask_password(self) -> str | None: ...
     def ask_yes_no(self, question: str) -> bool: ...
+    def ask_choice(self, question: str, count: int) -> int | None: ...
 
 
 class TerminalUI:
@@ -150,6 +151,13 @@ class TerminalUI:
         if not self.interactive:
             return False
         return input(f"{question} [y/N] ").strip().lower() in {"y", "yes"}
+
+    def ask_choice(self, question: str, count: int) -> int | None:
+        """A number from 1 to ``count``, as an index; None for Enter or anything else."""
+        if not self.interactive:
+            return None
+        answer = input(f"{question} [1-{count}, Enter for none] ").strip()
+        return int(answer) - 1 if answer.isdigit() and 1 <= int(answer) <= count else None
 
 
 class _Failed(Exception):

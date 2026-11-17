@@ -79,6 +79,29 @@ class Host:
     def glob(self, pattern: str) -> list[str]:
         return sorted(_glob.glob(pattern))
 
+    def usb_ids(self, device: str) -> tuple[str, str] | None:
+        """The USB ``(idVendor, idProduct)`` of the camera behind a video device or link."""
+        node = Path(os.path.realpath(device)).name
+        usb = Path("/sys/class/video4linux") / node / "device"
+        try:
+            # device is the USB interface; its parent is the USB device itself.
+            parent = usb.resolve().parent
+            return (
+                (parent / "idVendor").read_text().strip(),
+                (parent / "idProduct").read_text().strip(),
+            )
+        except OSError:
+            return None
+
+    def camera_label(self, device: str) -> str | None:
+        """The kernel's name for the camera behind a video device or link."""
+        node = Path(os.path.realpath(device)).name
+        text = self.read_text(Path("/sys/class/video4linux") / node / "name")
+        return text.strip() if text else None
+
+    def same_device(self, a: str, b: str) -> bool:
+        return bool(a) and bool(b) and os.path.realpath(a) == os.path.realpath(b)
+
     def write_file(self, path: Path, text: str) -> None:
         """Write a root-owned, world-readable config file, whole or not at all."""
         path.parent.mkdir(parents=True, exist_ok=True)

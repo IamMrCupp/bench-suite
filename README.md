@@ -71,6 +71,21 @@ Each step looks first, shows you the file it would write, and asks. A step that 
 
 `sudo bench-setup host --undo` removes the files `bench-setup` wrote — they carry a marker line — and nothing else. From a script, `--non-interactive --yes` answers yes throughout, and without `--yes` it only reports.
 
+### Camera names
+
+```sh
+sudo bench-setup cameras
+```
+
+`/dev/videoN` numbers follow plug-in order, and OBS saves them. When the thermal camera drops off USB and comes back, an OBS source can open the wrong camera — and then the HUD can't open its own. Run this with every camera plugged in:
+
+- it lists them, and asks which is the scope and which the thermal if benchhud doesn't know yet,
+- installs the udev rules that give each a `/dev/cam-*` name (`/dev/cam-scope`, `/dev/cam-thermal`, the rest after their model),
+- keeps the thermal camera out of USB autosuspend, which is what makes some of them drop off the bus,
+- and tells you which names to give OBS, and which cameras OBS shouldn't open at all.
+
+Run it again after adding a camera. `sudo bench-setup host --undo` removes these rules along with the rest.
+
 ### In containers instead
 
 If you'd rather not install the service packages, the three services run from the [`compose.yaml`](compose.yaml) in this repo, and `bench-setup` does the same job through `docker compose`:
