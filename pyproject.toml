@@ -4,13 +4,13 @@ dynamic = ["version"]
 description = "One install for the repair bench: benchhud, benchhud-intake, bench-parts and bench-recon, set up and wired to each other."
 readme = "README.md"
 requires-python = ">=3.12"
-license = "PolyForm-Small-Business-1.0.0"
+license = "AGPL-3.0-or-later"
 license-files = ["LICENSE", "NOTICES"]
 authors = [{ name = "Aaron Cupp" }]
 keywords = ["bench", "installer", "self-hosted", "apt"]
 
-# Source-available, not open source, and distributed from GitHub and
-# apt.yolorepair.com only. The classifier makes PyPI refuse an upload outright.
+# Distributed from GitHub and apt.yolorepair.com only. The classifier makes
+# PyPI refuse an upload outright.
 classifiers = ["Private :: Do Not Upload"]
 
 # None, on purpose: bench-setup runs on a fresh host on the system python3.
