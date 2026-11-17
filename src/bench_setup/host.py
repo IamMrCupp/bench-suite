@@ -9,9 +9,11 @@ from __future__ import annotations
 import glob as _glob
 import json
 import os
+import plistlib
 import pwd
 import shutil
 import subprocess
+import sys
 import time
 import tomllib
 import urllib.request
@@ -136,6 +138,43 @@ class Host:
 
     def installed(self, command: str) -> bool:
         return shutil.which(command) is not None
+
+    def is_macos(self) -> bool:
+        return sys.platform == "darwin"
+
+    def app_bundle(self, name: str, user: str | None = None) -> Path | None:
+        """A Mac app by its name, from /Applications or the user's own Applications."""
+        places = [Path("/Applications")]
+        home = self.home_of(user) if user else Path.home()
+        if home is not None:
+            places.append(home / "Applications")
+        for place in places:
+            bundle = place / f"{name}.app"
+            if (bundle / "Contents" / "MacOS" / name).is_file():
+                return bundle
+        return None
+
+    def app_version(self, bundle: Path) -> tuple[int, ...]:
+        """A Mac app's version as numbers, or () if it can't be read."""
+        try:
+            with (bundle / "Contents" / "Info.plist").open("rb") as fh:
+                text = str(plistlib.load(fh).get("CFBundleShortVersionString", ""))
+            return tuple(int(part) for part in text.split("."))
+        except (OSError, ValueError, plistlib.InvalidFileException):
+            return ()
+
+    def benchhud(self, user: str | None = None) -> str | None:
+        """The benchhud command: on the PATH, or inside the Mac app."""
+        if self.installed("benchhud"):
+            return "benchhud"
+        if self.is_macos():
+            bundle = self.app_bundle("benchhud", user)
+            if bundle is not None:
+                return str(bundle / "Contents" / "MacOS" / "benchhud")
+        return None
+
+    def process_running(self, name: str) -> bool:
+        return self.run(["pgrep", "-x", name])[0] == 0
 
     def read_settings(self, path: Path) -> dict[str, str]:
         """A service's settings.env as a dict; missing or unreadable counts as empty."""

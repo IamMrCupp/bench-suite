@@ -354,6 +354,9 @@ class _Steps:
 def run(options: Options, host: Host | None = None, ui: UI | None = None) -> int:
     host = host or Host()
     ui = ui or TerminalUI(options.interactive)
+    if host.is_macos():
+        ui.say("bench-setup host is for a Linux bench. A Mac needs none of it.")
+        return EXIT_OK
     if not host.is_root():
         ui.warn("bench-setup host changes system files. Run it with sudo.")
         return EXIT_USAGE

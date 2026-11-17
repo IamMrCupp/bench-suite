@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from bench_setup.doctor import benchhud_config, output_nodes
+from bench_setup.doctor import benchhud_config, obs_extension_state, output_nodes
 from bench_setup.host import Host
 from bench_setup.services import EXIT_OK, UI, TerminalUI
 
@@ -78,6 +78,19 @@ def run(options: Options, host: Host | None = None, ui: UI | None = None) -> int
     host = host or Host()
     ui = ui or TerminalUI(interactive=False)
     user = options.user or host.sudo_user() or host.current_user()
+    if host.is_macos():
+        _, state = obs_extension_state(host)
+        ui.say("benchhud's picture")
+        ui.say(f"  {state}.")
+        ui.say(
+            "  In OBS, add a Video Capture Device source and pick OBS Virtual Camera. "
+            "benchhud's picture is there while benchhud runs with its output on."
+        )
+        ui.say(
+            "  Don't press Start Virtual Camera in OBS while benchhud is publishing: the "
+            "extension has one sink, and benchhud is holding it."
+        )
+        return EXIT_OK
     config = benchhud_config(host, user)
     outputs = output_nodes(config) if config is not None else ["/dev/video10"]
 

@@ -59,6 +59,12 @@ class FakeHost:
     def installed(self, command: str) -> bool:
         return command in self.commands
 
+    def benchhud(self, user: str | None = None) -> str | None:
+        return "benchhud" if "benchhud" in self.commands else None
+
+    def is_macos(self) -> bool:
+        return False
+
     def read_settings(self, path: Path) -> dict[str, str]:
         return dict(self.settings[path.parent.name])
 
