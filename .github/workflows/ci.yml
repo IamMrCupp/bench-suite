@@ -107,8 +107,18 @@ jobs:
 
       - name: Fetch the released benchhud, intake, parts and recon packages
         run: |
+          # The newest release that has its package. A release is published a
+          # few minutes before its installers are attached, and a run in that
+          # window would otherwise find nothing.
           for repo in benchhud benchhud-intake bench-parts bench-recon; do
-            gh release download -R "IamMrCupp/$repo" -p '*amd64.deb' -D dist
+            got=""
+            for tag in $(gh release list -R "IamMrCupp/$repo" --exclude-drafts --exclude-pre-releases -L 5 --json tagName -q '.[].tagName'); do
+              if gh release download "$tag" -R "IamMrCupp/$repo" -p '*amd64.deb' -D dist 2>/dev/null; then
+                got=$tag; break
+              fi
+            done
+            test -n "$got" || { echo "no release of $repo carries an amd64 .deb"; exit 1; }
+            echo "$repo $got"
           done
 
       - name: Make a local apt repo of the six packages
