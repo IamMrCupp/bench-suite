@@ -113,6 +113,12 @@ There's no apt and no systemd on a Mac, and none of the host steps apply: benchh
 bench-setup              # no sudo: the apps are yours
 ```
 
+Until the Homebrew tap exists there's no Mac package of `bench-setup` itself. It's plain Python with no dependencies, so [uv](https://docs.astral.sh/uv/) can run it straight from this repo:
+
+```sh
+uvx --from git+https://github.com/IamMrCupp/bench-suite bench-setup
+```
+
 - **benchhud-intake and bench-parts** are menu-bar apps. `bench-setup services` sets the password and makes the token through each app's own binary, opens the app (or quits and reopens one that was running with old settings), and writes the URLs and tokens into benchhud's config.
 - **bench-recon** has no Mac app. It runs in a container, off until you turn it on: `bench-setup services --compose --recon`.
 - **`bench-setup doctor`** checks the apps the same way, and that macOS has OBS's camera extension turned on — the step people miss.
