@@ -286,6 +286,7 @@ class _MacApps:
     settings when it starts: after a change, a running app is quit and reopened.
     """
 
+    ASK_TRIES = 6
     QUIT_TRIES = 20
     QUIT_WAIT = 0.5
 
@@ -305,6 +306,13 @@ class _MacApps:
         if self.user is None:
             return self.host.run(cmd, stdin=stdin)
         return self.host.run_as_user(self.user, cmd, stdin=stdin)
+
+    def _gone(self, app: str, tries: int) -> bool:
+        for _ in range(tries):
+            if not self.host.process_running(app):
+                return True
+            self.host.sleep(self.QUIT_WAIT)
+        return not self.host.process_running(app)
 
     def missing(self, service: Service) -> str | None:
         if service.mac_app is None:
@@ -359,16 +367,16 @@ class _MacApps:
         if host.process_running(app):
             if not changed:
                 return
+            # Ask nicely first. A menu-bar app can decline an Apple event quit
+            # (the real ones answer "User canceled"), so then it's told to stop.
             self._as_user(["osascript", "-e", f'tell application "{app}" to quit'])
-            for _ in range(self.QUIT_TRIES):
-                if not host.process_running(app):
-                    break
-                host.sleep(self.QUIT_WAIT)
-            else:
-                raise _Failed(
-                    f"the {app} app didn't quit, so it's still running with its old "
-                    "settings. Quit it from the menu bar and run bench-setup again."
-                )
+            if not self._gone(app, self.ASK_TRIES):
+                self._as_user(["pkill", "-TERM", "-x", app])
+                if not self._gone(app, self.QUIT_TRIES):
+                    raise _Failed(
+                        f"the {app} app didn't quit, so it's still running with its old "
+                        "settings. Quit it from the menu bar and run bench-setup again."
+                    )
         # -g: leave whatever the owner is doing in front.
         code, _, err = self._as_user(["open", "-g", str(self._bundle(service))])
         if code != 0:
