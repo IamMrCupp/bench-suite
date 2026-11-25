@@ -130,6 +130,15 @@ The [tap](https://github.com/IamMrCupp/homebrew-bench) carries all three apps �
 
 It needs app versions whose binaries take commands: benchhud-intake 0.4.0, bench-parts 0.5.0 and benchhud 0.14.4 or newer. With an older one it says so and leaves that app alone. Windows is still to come.
 
+## Support
+
+If it's earned a spot on your bench and you'd like to throw a coffee my way:
+
+- [Ko-fi](https://ko-fi.com/IamMrCupp)
+- [Buy Me a Coffee](https://buymeacoffee.com/IamMrCupp)
+
+No pressure — it stays open source either way.
+
 ## License
 
 [AGPL-3.0-or-later](LICENSE), like the rest of the bench apps — open source, with commercial licences for anyone the AGPL doesn't fit. See [CONTRIBUTING](CONTRIBUTING.md) before sending a change.
